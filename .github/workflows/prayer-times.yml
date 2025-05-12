@@ -1,0 +1,32 @@
+name: Prayer Times Extraction
+
+on:
+  schedule:
+    # Run every Sunday at 3:00 AM UTC (adjust as needed)
+    - cron: '0 3 * * 0'
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  extract-prayer-times:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: npm install puppeteer csv-writer
+        
+      - name: Run prayer times extraction
+        run: node extract-prayer-times.js
+        
+      - name: Commit and push CSV files
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git add prayer_times/*.csv
+          git commit -m "Update prayer times for $(date +'%B %Y')" || echo "No changes to commit"
+          git push

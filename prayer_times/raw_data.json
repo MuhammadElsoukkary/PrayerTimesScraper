@@ -1,0 +1,226 @@
+[
+  {
+    "date": "May 2025 12 Mon",
+    "dayNumber": 12,
+    "dayOfWeek": 1,
+    "isToday": true,
+    "prayers": {
+      "Fajr": {
+        "start": "4:25",
+        "iqamah": "5:15"
+      },
+      "Sunrise": {
+        "start": "6:01",
+        "iqamah": ""
+      },
+      "Dhuhr": {
+        "start": "1:19",
+        "iqamah": "1:45"
+      },
+      "Asr": {
+        "start": "6:26",
+        "iqamah": "6:45"
+      },
+      "Magrib": {
+        "start": "8:37",
+        "iqamah": "8:41"
+      },
+      "Isha": {
+        "start": "10:13",
+        "iqamah": "10:15"
+      }
+    }
+  },
+  {
+    "date": "May 2025 13 Tue",
+    "dayNumber": 13,
+    "dayOfWeek": 2,
+    "isToday": false,
+    "prayers": {
+      "Fajr": {
+        "start": "4:23",
+        "iqamah": "5:15"
+      },
+      "Sunrise": {
+        "start": "6:00",
+        "iqamah": ""
+      },
+      "Dhuhr": {
+        "start": "1:19",
+        "iqamah": "1:45"
+      },
+      "Asr": {
+        "start": "6:26",
+        "iqamah": "6:45"
+      },
+      "Magrib": {
+        "start": "8:38",
+        "iqamah": "8:42"
+      },
+      "Isha": {
+        "start": "10:15",
+        "iqamah": "10:15"
+      }
+    }
+  },
+  {
+    "date": "May 2025 14 Wed",
+    "dayNumber": 14,
+    "dayOfWeek": 3,
+    "isToday": false,
+    "prayers": {
+      "Fajr": {
+        "start": "4:21",
+        "iqamah": "5:15"
+      },
+      "Sunrise": {
+        "start": "5:58",
+        "iqamah": ""
+      },
+      "Dhuhr": {
+        "start": "1:19",
+        "iqamah": "1:45"
+      },
+      "Asr": {
+        "start": "6:27",
+        "iqamah": "6:45"
+      },
+      "Magrib": {
+        "start": "8:39",
+        "iqamah": "8:43"
+      },
+      "Isha": {
+        "start": "10:17",
+        "iqamah": "10:17"
+      }
+    }
+  },
+  {
+    "date": "May 2025 15 Thu",
+    "dayNumber": 15,
+    "dayOfWeek": 4,
+    "isToday": false,
+    "prayers": {
+      "Fajr": {
+        "start": "4:20",
+        "iqamah": "5:00"
+      },
+      "Sunrise": {
+        "start": "5:57",
+        "iqamah": ""
+      },
+      "Dhuhr": {
+        "start": "1:19",
+        "iqamah": "1:45"
+      },
+      "Asr": {
+        "start": "6:28",
+        "iqamah": "6:45"
+      },
+      "Magrib": {
+        "start": "8:40",
+        "iqamah": "8:44"
+      },
+      "Isha": {
+        "start": "10:18",
+        "iqamah": "10:18"
+      }
+    }
+  },
+  {
+    "date": "May 2025 16 Fri",
+    "dayNumber": 16,
+    "dayOfWeek": 5,
+    "isToday": false,
+    "prayers": {
+      "Fajr": {
+        "start": "4:18",
+        "iqamah": "5:00"
+      },
+      "Sunrise": {
+        "start": "5:56",
+        "iqamah": ""
+      },
+      "Dhuhr": {
+        "start": "1:19",
+        "iqamah": "1:40, 2:55"
+      },
+      "Asr": {
+        "start": "6:28",
+        "iqamah": "6:45"
+      },
+      "Magrib": {
+        "start": "8:41",
+        "iqamah": "8:45"
+      },
+      "Isha": {
+        "start": "10:20",
+        "iqamah": "10:20"
+      }
+    }
+  },
+  {
+    "date": "May 2025 17 Sat",
+    "dayNumber": 17,
+    "dayOfWeek": 6,
+    "isToday": false,
+    "prayers": {
+      "Fajr": {
+        "start": "4:17",
+        "iqamah": "5:00"
+      },
+      "Sunrise": {
+        "start": "5:55",
+        "iqamah": ""
+      },
+      "Dhuhr": {
+        "start": "1:19",
+        "iqamah": "1:45"
+      },
+      "Asr": {
+        "start": "6:29",
+        "iqamah": "6:45"
+      },
+      "Magrib": {
+        "start": "8:43",
+        "iqamah": "8:47"
+      },
+      "Isha": {
+        "start": "10:21",
+        "iqamah": "10:21"
+      }
+    }
+  },
+  {
+    "date": "May 2025 18 Sun",
+    "dayNumber": 18,
+    "dayOfWeek": 0,
+    "isToday": false,
+    "prayers": {
+      "Fajr": {
+        "start": "4:15",
+        "iqamah": "5:00"
+      },
+      "Sunrise": {
+        "start": "5:54",
+        "iqamah": ""
+      },
+      "Dhuhr": {
+        "start": "1:19",
+        "iqamah": "1:45"
+      },
+      "Asr": {
+        "start": "6:29",
+        "iqamah": "6:45"
+      },
+      "Magrib": {
+        "start": "8:44",
+        "iqamah": "8:48"
+      },
+      "Isha": {
+        "start": "10:23",
+        "iqamah": "10:23"
+      }
+    }
+  }
+]

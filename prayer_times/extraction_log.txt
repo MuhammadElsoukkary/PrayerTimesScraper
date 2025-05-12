@@ -1,0 +1,46 @@
+[2025-05-12T23:12:40.213Z] [INFO] Started extraction in DEBUG mode at Mon May 12 2025 19:12:40 GMT-0400 (Eastern Daylight Saving Time)
+[2025-05-12T23:12:40.216Z] [INFO] Starting prayer times extraction with Puppeteer...
+[2025-05-12T23:12:40.772Z] [INFO] Navigating to https://waterloomasjid.com/main/index.php/prayers...
+[2025-05-12T23:12:43.352Z] [INFO] Prayer timetable found on the page
+[2025-05-12T23:12:43.680Z] [INFO] Extracted data for 7 days
+[2025-05-12T23:12:43.683Z] [INFO] Processing extracted week data...
+[2025-05-12T23:12:43.686Z] [INFO] Found multiple times, using only the first one: 1:40
+[2025-05-12T23:12:43.688Z] [INFO] Processed 7 days of data
+[2025-05-12T23:12:43.689Z] [INFO] Sample athan data: {"Fajr":"04:25","Sunrise":"06:01","Dhuhr":"13:19","Asr":"18:26","Maghrib":"20:37","Isha":"22:13"}
+[2025-05-12T23:12:43.690Z] [INFO] Creating full month data for 31 days
+[2025-05-12T23:12:43.691Z] [INFO] Using day of week 4 pattern for day 1
+[2025-05-12T23:12:43.692Z] [INFO] Using day of week 5 pattern for day 2
+[2025-05-12T23:12:43.693Z] [INFO] Using day of week 6 pattern for day 3
+[2025-05-12T23:12:43.694Z] [INFO] Using day of week 0 pattern for day 4
+[2025-05-12T23:12:43.695Z] [INFO] Using day of week 1 pattern for day 5
+[2025-05-12T23:12:43.697Z] [INFO] Using day of week 2 pattern for day 6
+[2025-05-12T23:12:43.698Z] [INFO] Using day of week 3 pattern for day 7
+[2025-05-12T23:12:43.699Z] [INFO] Using day of week 4 pattern for day 8
+[2025-05-12T23:12:43.701Z] [INFO] Using day of week 5 pattern for day 9
+[2025-05-12T23:12:43.702Z] [INFO] Using day of week 6 pattern for day 10
+[2025-05-12T23:12:43.703Z] [INFO] Using day of week 0 pattern for day 11
+[2025-05-12T23:12:43.704Z] [INFO] Using actual data for day 12
+[2025-05-12T23:12:43.705Z] [INFO] Using actual data for day 13
+[2025-05-12T23:12:43.706Z] [INFO] Using actual data for day 14
+[2025-05-12T23:12:43.707Z] [INFO] Using actual data for day 15
+[2025-05-12T23:12:43.708Z] [INFO] Using actual data for day 16
+[2025-05-12T23:12:43.708Z] [INFO] Using actual data for day 17
+[2025-05-12T23:12:43.710Z] [INFO] Using actual data for day 18
+[2025-05-12T23:12:43.711Z] [INFO] Using day of week 1 pattern for day 19
+[2025-05-12T23:12:43.712Z] [INFO] Using day of week 2 pattern for day 20
+[2025-05-12T23:12:43.712Z] [INFO] Using day of week 3 pattern for day 21
+[2025-05-12T23:12:43.713Z] [INFO] Using day of week 4 pattern for day 22
+[2025-05-12T23:12:43.714Z] [INFO] Using day of week 5 pattern for day 23
+[2025-05-12T23:12:43.715Z] [INFO] Using day of week 6 pattern for day 24
+[2025-05-12T23:12:43.717Z] [INFO] Using day of week 0 pattern for day 25
+[2025-05-12T23:12:43.718Z] [INFO] Using day of week 1 pattern for day 26
+[2025-05-12T23:12:43.718Z] [INFO] Using day of week 2 pattern for day 27
+[2025-05-12T23:12:43.719Z] [INFO] Using day of week 3 pattern for day 28
+[2025-05-12T23:12:43.720Z] [INFO] Using day of week 4 pattern for day 29
+[2025-05-12T23:12:43.721Z] [INFO] Using day of week 5 pattern for day 30
+[2025-05-12T23:12:43.721Z] [INFO] Using day of week 6 pattern for day 31
+[2025-05-12T23:12:43.758Z] [INFO] Athan times for full month saved to prayer_times\athan_times_May.csv
+[2025-05-12T23:12:43.762Z] [INFO] Iqama times for full month saved to prayer_times\iqama_times_May.csv
+[2025-05-12T23:12:43.763Z] [INFO] Prayer times extraction completed successfully!
+[2025-05-12T23:12:44.512Z] [INFO] Browser closed
+[2025-05-12T23:12:44.517Z] [INFO] Script completed successfully!

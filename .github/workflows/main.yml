@@ -1,46 +1,45 @@
 # .github/workflows/upload-monthly-prayers.yml
 name: Upload Current Month Prayer Times
 
-# Trigger whenever any CSV under prayer_times/ changes on main,
-# or you can uncomment the schedule block to run on the 1st of each month.
 on:
+  # Trigger when any CSV under prayer_times/ changes on main:
   push:
     paths:
       - 'prayer_times/**/*.csv'
     branches:
       - main
-  # schedule:
-  #   - cron: '0 2 1 * *'   # runs at 02:00 UTC on the 1st of every month
+
+  # Allow manual runs from the Actions tab:
+  workflow_dispatch: {}
 
 jobs:
   upload:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Check out your repo (so the prayer_times/*.csv files are present)
+      # 1) Checkout your repo so that prayer_times/ files are available
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2) Install a specific Python version
+      # 2) Set up Python
       - name: Set up Python 3.x
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      # 3) Install the only Python dependencies: requests + BeautifulSoup
+      # 3) Install requests + BeautifulSoup for our uploader
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4
 
-      # 4) Run your “upload_current_month.py” script,
-      #    injecting your secrets as environment variables.
-      - name: Upload only this month’s CSVs to Mawaqit
+      # 4) Run the debug uploader (upload_current_month.py)
+      - name: Debug & upload this month’s CSVs to Mawaqit
         env:
           MAWAQIT_USER: ${{ secrets.MAWAQIT_USER }}
           MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
         run: python upload_current_month.py
 
-      # 5) (Optional) List out what’s in prayer_times/ for debugging
+      # 5) Sanity check: list prayer_times directory
       - name: List prayer_times directory
         run: ls -1 prayer_times/

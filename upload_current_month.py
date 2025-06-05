@@ -13,7 +13,7 @@ from datetime import datetime
 # ─── CONFIGURATION ─────────────────────────────────────────────────────────────
 MAWAQIT_BASE = "https://mawaqit.net"
 MOSQUE_SLUG  = "your-mosque-slug"        # e.g. "al-salam-masjid"
-LOGIN_PATH   = "/login"
+LOGIN_PATH   = "/en/backoffice/login"
 UPLOAD_PATH  = f"/{MOSQUE_SLUG}/timetable/upload"
 
 USERNAME     = os.environ.get("MAWAQIT_USER")

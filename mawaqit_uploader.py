@@ -20,72 +20,52 @@ def human_like_mouse_move(page, target_selector):
     Move mouse to target in a human-like curved path with realistic timing
     """
     try:
-        # Get target element position
         target = page.locator(target_selector)
         if target.count() == 0:
             return False
-    
-    except Exception as e:
-        print(f"❌ Error solving reCAPTCHA: {e}")
-        return False
-
-
-def extract_code_from_recent_email(gmail_user, gmail_app_password):
             
         box = target.bounding_box()
         if not box:
             return False
         
-        # Calculate target center
         target_x = box['x'] + box['width'] / 2
         target_y = box['y'] + box['height'] / 2
         
-        # Get current mouse position (start from a random nearby point)
         start_x = target_x + random.randint(-200, -100)
         start_y = target_y + random.randint(-100, 100)
         
-        # Create curved path points
-        steps = random.randint(15, 25)  # Random number of steps
+        steps = random.randint(15, 25)
         points = []
         
         for i in range(steps + 1):
             progress = i / steps
-            
-            # Base linear interpolation
             x = start_x + (target_x - start_x) * progress
             y = start_y + (target_y - start_y) * progress
             
-            # Add curve with sine wave
             curve_height = random.randint(20, 50)
             curve_offset = math.sin(progress * math.pi) * curve_height
             
-            # Add some randomness
             x += random.randint(-5, 5)
             y += curve_offset + random.randint(-5, 5)
             
             points.append((x, y))
         
-        # Move mouse along the curved path
         for i, (x, y) in enumerate(points):
             page.mouse.move(x, y)
             
-            # Vary the timing - slower at start and end, faster in middle
             if i < 3 or i > len(points) - 4:
-                delay = random.randint(50, 100)  # Slower at ends
+                delay = random.randint(50, 100)
             else:
-                delay = random.randint(10, 30)   # Faster in middle
+                delay = random.randint(10, 30)
             
-            time.sleep(delay / 1000)  # Convert to seconds
+            time.sleep(delay / 1000)
         
-        # Small pause before clicking
         time.sleep(random.randint(100, 300) / 1000)
-        
         return True
         
     except Exception as e:
         print(f"⚠️ Error in human-like mouse movement: {e}")
         return False
-
 
 def solve_recaptcha_checkbox(page):
     """
@@ -94,7 +74,6 @@ def solve_recaptcha_checkbox(page):
     print("🤖 Attempting to solve reCAPTCHA checkbox...")
     
     try:
-        # Find the reCAPTCHA checkbox
         checkbox_selectors = [
             '.g-recaptcha iframe',
             'iframe[src*="recaptcha"]',
@@ -109,7 +88,6 @@ def solve_recaptcha_checkbox(page):
                 print(f"✅ Found reCAPTCHA element: {selector}")
                 
                 if 'iframe' in selector:
-                    # Switch to reCAPTCHA iframe
                     checkbox_frame = page.frame_locator(selector)
                     if checkbox_frame.locator('[role="checkbox"]').count() > 0:
                         checkbox_found = True
@@ -122,34 +100,21 @@ def solve_recaptcha_checkbox(page):
             print("❌ Could not find reCAPTCHA checkbox")
             return False
         
-        # Add random delay before interaction
         time.sleep(random.randint(1000, 3000) / 1000)
         
-        # Perform human-like mouse movement and click
         if checkbox_frame:
-            # Working with iframe
             checkbox_element = checkbox_frame.locator('[role="checkbox"]')
-            
-            # Get the iframe's position and add to checkbox position
             iframe_element = page.locator('iframe[src*="recaptcha"]')
             iframe_box = iframe_element.bounding_box()
             
             if iframe_box:
-                # Move to iframe first
-                iframe_center_x = iframe_box['x'] + iframe_box['width'] / 2
-                iframe_center_y = iframe_box['y'] + iframe_box['height'] / 2
-                
-                # Human-like movement to iframe area
                 human_like_mouse_move(page, 'iframe[src*="recaptcha"]')
-                
-                # Click the checkbox within the iframe
                 checkbox_element.click()
                 print("✅ Clicked reCAPTCHA checkbox in iframe")
             else:
                 checkbox_element.click()
                 print("✅ Clicked reCAPTCHA checkbox")
         else:
-            # Direct checkbox click
             if human_like_mouse_move(page, '[role="checkbox"]'):
                 page.click('[role="checkbox"]')
                 print("✅ Clicked reCAPTCHA checkbox with human-like movement")
@@ -157,15 +122,13 @@ def solve_recaptcha_checkbox(page):
                 page.click('[role="checkbox"]')
                 print("✅ Clicked reCAPTCHA checkbox (fallback)")
         
-        # Wait for reCAPTCHA to process
         print("⏳ Waiting for reCAPTCHA verification...")
         time.sleep(random.randint(2000, 4000) / 1000)
         
-        # Check if reCAPTCHA was solved
         solved_indicators = [
-            '.g-recaptcha-response[value!=""]',  # reCAPTCHA response token present
-            '[aria-checked="true"]',             # Checkbox marked as checked
-            'iframe[src*="recaptcha"][title*="verified"]'  # Verified iframe
+            '.g-recaptcha-response[value!=""]',
+            '[aria-checked="true"]',
+            'iframe[src*="recaptcha"][title*="verified"]'
         ]
         
         for indicator in solved_indicators:
@@ -173,13 +136,14 @@ def solve_recaptcha_checkbox(page):
                 print("✅ reCAPTCHA appears to be solved!")
                 return True
         
-        # If we can't detect success, assume it worked after reasonable wait
         print("⚠️ Cannot confirm reCAPTCHA status, proceeding...")
         return True
         
     except Exception as e:
         print(f"❌ Error solving reCAPTCHA: {e}")
         return False
+
+def extract_code_from_recent_email(gmail_user, gmail_app_password):
     """
     Fallback: Extract code from the most recent Mawaqit email, regardless of age
     """
@@ -190,15 +154,13 @@ def solve_recaptcha_checkbox(page):
         imap.login(gmail_user, gmail_app_password)
         imap.select("inbox")
 
-        # Get all emails and find the most recent Mawaqit one
         status, messages = imap.search(None, 'ALL')
         if status != 'OK' or not messages[0]:
             return None
 
         mail_ids = messages[0].split()
         
-        # Check recent emails for Mawaqit
-        for mail_id in reversed(mail_ids[-50:]):  # Check last 50 emails
+        for mail_id in reversed(mail_ids[-50:]):
             try:
                 status, msg_data = imap.fetch(mail_id, "(RFC822)")
                 if status != 'OK':
@@ -209,13 +171,11 @@ def solve_recaptcha_checkbox(page):
                 
                 sender = msg.get('From', '').lower()
                 
-                # Only process Mawaqit emails
                 if not any(domain in sender for domain in ['mawaqit.net', 'mawaqit.com']):
                     continue
                 
                 print(f"🔍 Found Mawaqit email from: {sender}")
                 
-                # Extract email body
                 body = ""
                 if msg.is_multipart():
                     for part in msg.walk():
@@ -238,7 +198,6 @@ def solve_recaptcha_checkbox(page):
                 if not body:
                     continue
                 
-                # Look for 6-digit code
                 code_patterns = [
                     r'\b(\d{6})\b',
                     r'verification.*?(\d{6})',
@@ -266,7 +225,6 @@ def solve_recaptcha_checkbox(page):
     
     return None
 
-
 def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
     """
     Fetch the latest 2FA code from Gmail for Mawaqit - extended wait time
@@ -281,14 +239,12 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
         print(f"🔄 Attempt {attempt} to find 2FA code...")
         
         try:
-            # Connect to Gmail via IMAP
             print("📧 Connecting to Gmail...")
             imap = imaplib.IMAP4_SSL("imap.gmail.com")
             imap.login(gmail_user, gmail_app_password)
             imap.select("inbox")
             print("✅ Connected to Gmail successfully")
 
-            # Get all recent emails (last 50) and check them manually
             print("🔍 Fetching recent emails...")
             status, messages = imap.search(None, 'ALL')
             
@@ -302,8 +258,7 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
             mail_ids = messages[0].split()
             print(f"📧 Found {len(mail_ids)} total emails in inbox")
             
-            # Check the most recent emails for 2FA code
-            recent_emails = mail_ids[-20:]  # Check last 20 emails
+            recent_emails = mail_ids[-20:]
             print(f"🔍 Checking {len(recent_emails)} most recent emails...")
             
             for i, mail_id in enumerate(reversed(recent_emails)):
@@ -317,7 +272,6 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                     raw_msg = msg_data[0][1]
                     msg = email.message_from_bytes(raw_msg)
                     
-                    # Get sender and subject for debugging
                     sender = msg.get('From', '')
                     subject = msg.get('Subject', '')
                     date_str = msg.get('Date', '')
@@ -326,7 +280,6 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                     print(f"   Subject: {subject}")
                     print(f"   Date: {date_str}")
                     
-                    # Check if it's from Mawaqit or contains verification keywords
                     sender_lower = sender.lower()
                     subject_lower = subject.lower()
                     
@@ -339,14 +292,12 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                     
                     print("   ✅ Email looks relevant, checking content...")
                     
-                    # Get email date and check if it's recent (more lenient for Mawaqit emails)
                     try:
                         email_date = email.utils.parsedate_to_datetime(msg['Date'])
                         time_diff = (datetime.now(email_date.tzinfo) - email_date).total_seconds()
                         print(f"   ⏰ Email age: {time_diff/60:.1f} minutes")
                         
-                        # Be much more lenient with Mawaqit emails - check up to 2 hours old
-                        max_age = 7200 if is_mawaqit else 300  # 2 hours for Mawaqit, 5 minutes for others
+                        max_age = 7200 if is_mawaqit else 300
                         if time_diff > max_age:
                             print(f"   ⏳ Email too old (>{max_age/60:.0f} min), skipping...")
                             continue
@@ -354,11 +305,9 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                             print(f"   ✅ Email is within acceptable age limit ({max_age/60:.0f} min)")
                     except Exception as e:
                         print(f"   ⚠️ Could not parse email date: {e}")
-                        # Continue anyway for Mawaqit emails
                         if not is_mawaqit:
                             continue
                     
-                    # Extract email body
                     body = ""
                     if msg.is_multipart():
                         for part in msg.walk():
@@ -387,7 +336,6 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                     
                     print(f"   📄 Email body length: {len(body)} characters")
                     
-                    # Look for verification-related keywords in body
                     verification_keywords = ['verification', 'verify', 'authenticate', 'login', 'code', 'mawaqit', 'security']
                     body_lower = body.lower()
                     
@@ -398,22 +346,20 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                         print("   ⏳ No verification keywords in body, skipping...")
                         continue
                     
-                    # Look for 6-digit verification code
                     code_patterns = [
-                        r'\b(\d{6})\b',  # Any 6 digits
-                        r'verification.*?(\d{6})',  # 6 digits after "verification"
-                        r'code.*?(\d{6})',  # 6 digits after "code"
-                        r'(\d{6}).*?verification',  # 6 digits before "verification"
-                        r'(\d{6}).*?code',  # 6 digits before "code"
+                        r'\b(\d{6})\b',
+                        r'verification.*?(\d{6})',
+                        r'code.*?(\d{6})',
+                        r'(\d{6}).*?verification',
+                        r'(\d{6}).*?code',
                     ]
                     
                     for pattern_name, pattern in enumerate(code_patterns):
                         code_matches = re.findall(pattern, body, re.IGNORECASE | re.DOTALL)
                         if code_matches:
-                            code = code_matches[-1]  # Get the last match
+                            code = code_matches[-1]
                             print(f"   ✅ Found 2FA code with pattern {pattern_name + 1}: {code}")
                             
-                            # Verify it's a valid 6-digit code
                             if code.isdigit() and len(code) == 6:
                                 print(f"✅ Valid 2FA code found: {code}")
                                 imap.close()
@@ -431,7 +377,7 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
             print("⏳ No recent 2FA code found in current batch, waiting...")
             imap.close()
             imap.logout()
-            time.sleep(15)  # Wait longer between attempts
+            time.sleep(15)
             
         except Exception as e:
             print(f"❌ Error checking email: {e}")
@@ -453,7 +399,6 @@ def read_prayer_times_csv(athan_csv_path, iqama_csv_path):
     prayer_times = {}
     
     try:
-        # Read Athan times
         athan_times = {}
         with open(athan_csv_path, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
@@ -469,7 +414,6 @@ def read_prayer_times_csv(athan_csv_path, iqama_csv_path):
                         'isha': row.get('Isha', '')
                     }
         
-        # Read Iqama times
         iqama_times = {}
         with open(iqama_csv_path, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
@@ -484,7 +428,6 @@ def read_prayer_times_csv(athan_csv_path, iqama_csv_path):
                         'isha': row.get('Isha', '')
                     }
         
-        # Combine both into prayer_times dict
         for day in athan_times:
             prayer_times[day] = {
                 'athan': athan_times[day],
@@ -504,7 +447,6 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
     """
     print("🚀 Starting Mawaqit upload process...")
     
-    # Get current month name for CSV files
     current_month = datetime.now().strftime('%B')
     athan_csv_path = os.path.join(prayer_times_dir, f'athan_times_{current_month}.csv')
     iqama_csv_path = os.path.join(prayer_times_dir, f'iqama_times_{current_month}.csv')
@@ -513,13 +455,11 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
     print(f"📂 Looking for Athan CSV: {athan_csv_path}")
     print(f"📂 Looking for Iqama CSV: {iqama_csv_path}")
     
-    # Check if CSV files exist
     if not os.path.exists(athan_csv_path) or not os.path.exists(iqama_csv_path):
         print(f"❌ CSV files not found:")
         print(f"   Athan exists: {os.path.exists(athan_csv_path)}")
         print(f"   Iqama exists: {os.path.exists(iqama_csv_path)}")
         
-        # List what files ARE in the directory
         if os.path.exists(prayer_times_dir):
             print(f"📁 Files in {prayer_times_dir}:")
             for file in os.listdir(prayer_times_dir):
@@ -527,20 +467,17 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
         
         return False
     
-    # Read prayer times from CSV files
     prayer_times = read_prayer_times_csv(athan_csv_path, iqama_csv_path)
     if not prayer_times:
         print("❌ No prayer times found in CSV files")
         return False
     
-    # Log some sample data
     sample_day = list(prayer_times.keys())[0]
     print(f"📊 Sample data for day {sample_day}:")
     print(f"   Athan: {prayer_times[sample_day]['athan']}")
     print(f"   Iqama: {prayer_times[sample_day]['iqama']}")
     
     with sync_playwright() as p:
-        # Launch browser - automatically detect if running in headless environment
         is_ci = bool(os.getenv('CI'))
         is_github_actions = bool(os.getenv('GITHUB_ACTIONS')) 
         has_display = bool(os.getenv('DISPLAY'))
@@ -554,18 +491,15 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
         page = context.new_page()
         
         try:
-            # Navigate to Mawaqit login
             print("🌐 Navigating to Mawaqit login...")
             page.goto("https://mawaqit.net/en/backoffice/login", wait_until="networkidle")
             
-            # Fill login form
             print("📝 Filling login credentials...")
             page.fill('input[type="email"]', mawaqit_email)
             page.fill('input[type="password"]', mawaqit_password)
             
-            # Handle reCAPTCHA if present
             print("🤖 Checking for reCAPTCHA...")
-            recaptcha_solved = True  # Assume no reCAPTCHA by default
+            recaptcha_solved = True
             
             if page.locator('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"]').count() > 0:
                 print("🛡️ reCAPTCHA detected - attempting to solve...")
@@ -576,13 +510,10 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     print("💡 Manual intervention needed")
                     return False
             
-            # Small delay before submitting
             time.sleep(random.randint(1000, 2000) / 1000)
             
-            # Take screenshot before submit
             page.screenshot(path="debug_before_login.png")
             
-            # Submit login with human-like timing
             print("🔑 Submitting login...")
             if human_like_mouse_move(page, 'button[type="submit"]'):
                 page.click('button[type="submit"]')
@@ -591,24 +522,19 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             
             print("⏳ Waiting for login response...")
             
-            # Wait for login to process
             page.wait_for_load_state("networkidle", timeout=30000)
             page.wait_for_timeout(3000)
             
-            # Take screenshot after login attempt
             page.screenshot(path="debug_after_login.png")
             
-            # Check what page we're on now
             current_url = page.url
             page_content = page.content().lower()
             
             print(f"🌐 Current URL: {current_url}")
             
-            # Check if we're still on login page (login failed)
             if "login" in current_url.lower():
                 print("❌ Still on login page - login may have failed")
                 
-                # Check for error messages
                 error_selectors = [
                     '.error', '.alert-danger', '.invalid-feedback',
                     'text="Invalid"', 'text="Wrong"', 'text="Incorrect"'
@@ -619,7 +545,6 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                         error_text = page.locator(error_selector).inner_text()
                         print(f"🚨 Login error found: {error_text}")
                 
-                # Check if reCAPTCHA is blocking us
                 if page.locator('.g-recaptcha, [data-sitekey]').count() > 0:
                     print("🛡️ reCAPTCHA is likely blocking the login")
                     print("💡 Manual intervention needed - reCAPTCHA must be solved by human")
@@ -628,13 +553,11 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 print("❌ Login failed for unknown reason")
                 return False
             
-            # Check if 2FA is required
             print("🔍 Checking if 2FA is required...")
             
             if "verification" in page_content or "code" in page_content or "authenticate" in page_content:
                 print("📧 2FA page detected!")
                 
-                # Try to trigger a new 2FA email by clicking "Resend" 
                 print("🔄 Looking for resend code button...")
                 resend_selectors = [
                     'button:has-text("Resend")',
@@ -651,7 +574,7 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                             print(f"✅ Found resend button: {resend_selector}")
                             page.click(resend_selector)
                             print("🔄 Clicked resend - waiting for new email...")
-                            page.wait_for_timeout(5000)  # Wait 5 seconds for email to be sent
+                            page.wait_for_timeout(5000)
                             break
                         except Exception as e:
                             print(f"⚠️ Failed to click resend: {e}")
@@ -659,7 +582,6 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 else:
                     print("⚠️ No resend button found, proceeding with existing 2FA flow...")
                 
-                # Get 2FA code from email with longer timeout and more lenient age check
                 print("📧 Waiting for 2FA code from Gmail...")
                 verification_code = get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120)
                 
@@ -667,18 +589,12 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     print("❌ Still no 2FA code found")
                     print("🔍 Let's try to use the most recent Mawaqit email even if it's old...")
                     
-                    # Fallback: try to extract code from the most recent Mawaqit email we saw
                     verification_code = extract_code_from_recent_email(gmail_user, gmail_app_password)
                 
                 if not verification_code:
                     print("❌ Failed to get any 2FA code")
                     return False
                 
-                if not verification_code:
-                    print("❌ Failed to get 2FA code")
-                    return False
-                
-                # Enter 2FA code - try different input selectors
                 code_input_selectors = [
                     'input[placeholder*="code" i]',
                     'input[name*="code" i]',
@@ -700,7 +616,6 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     page.screenshot(path="debug_2fa_input.png")
                     return False
                 
-                # Submit 2FA
                 submit_selectors = [
                     'button[type="submit"]',
                     'input[type="submit"]',
@@ -726,14 +641,10 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 page.wait_for_timeout(3000)
             
             print("✅ Successfully logged in to Mawaqit!")
-            
-            # Take a screenshot to see what we're working with
             page.screenshot(path="debug_logged_in.png")
             
-            # Navigate to prayer times configuration
             print("🏛️ Looking for prayer times configuration...")
             
-            # Try to find and click on prayer times related links
             prayer_time_links = [
                 'text="Athan & Iqama"',
                 'text="Prayer Times"',
@@ -761,13 +672,10 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 print("⚠️ Could not find prayer times configuration link")
                 page.screenshot(path="debug_no_navigation.png")
             
-            # Take another screenshot after navigation
             page.screenshot(path="debug_prayer_times_page.png")
             
-            # Try to find the prayer times form and fill it
             print("📝 Looking for prayer times form...")
             
-            # Get today's date to highlight current day
             today = datetime.now().day
             print(f"📅 Today is day {today} of the month")
             
@@ -779,17 +687,14 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     day_marker = "🔥 TODAY" if day == today else ""
                     print(f"Processing day {day} {day_marker}...")
                     
-                    # Log the times we're about to upload for today
                     if day == today:
                         athan = times['athan']
                         iqama = times['iqama']
                         print(f"🕐 Today's Athan times: Fajr={athan['fajr']}, Dhuhr={athan['dhuhr']}, Asr={athan['asr']}, Maghrib={athan['maghrib']}, Isha={athan['isha']}")
                         print(f"🕐 Today's Iqama times: Fajr={iqama['fajr']}, Dhuhr={iqama['dhuhr']}, Asr={iqama['asr']}, Maghrib={iqama['maghrib']}, Isha={iqama['isha']}")
                     
-                    # Try multiple selector patterns for Mawaqit's form
                     day_filled = False
                     
-                    # Pattern 1: Look for inputs with day in name/id
                     selectors_to_try = [
                         f'input[name*="day_{day}"]',
                         f'input[data-day="{day}"]', 
@@ -803,11 +708,9 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                         if page.locator(base_selector).count() > 0:
                             print(f"   ✅ Found inputs with selector: {base_selector}")
                             
-                            # Try to fill each prayer time
                             prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']
                             
                             for prayer in prayers:
-                                # Fill Athan time
                                 athan_time = times['athan'].get(prayer, '')
                                 if athan_time:
                                     athan_selectors = [
@@ -826,7 +729,6 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                                         except Exception as e:
                                             continue
                                 
-                                # Fill Iqama time  
                                 iqama_time = times['iqama'].get(prayer, '')
                                 if iqama_time:
                                     iqama_selectors = [
@@ -851,10 +753,9 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                         filled_days += 1
                     else:
                         errors.append(f"Could not find inputs for day {day}")
-                        if day == today:  # Only screenshot for today if we can't fill it
+                        if day == today:
                             page.screenshot(path=f"debug_day_{day}_not_found.png")
                     
-                    # Small delay between days
                     page.wait_for_timeout(50)
                     
                 except Exception as e:
@@ -866,10 +767,9 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             print(f"✅ Filled prayer times for {filled_days} days")
             if errors:
                 print(f"⚠️ Encountered {len(errors)} errors:")
-                for error in errors[:5]:  # Show first 5 errors
+                for error in errors[:5]:
                     print(f"   - {error}")
             
-            # Try to save the changes
             print("💾 Looking for save button...")
             
             save_selectors = [
@@ -898,12 +798,10 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 print("⚠️ Could not find or click save button")
                 page.screenshot(path="debug_save_button.png")
             else:
-                # Wait for save to complete
                 page.wait_for_load_state("networkidle")
                 page.wait_for_timeout(2000)
                 print("✅ Save completed!")
             
-            # Final screenshot
             page.screenshot(path="debug_final_state.png")
             
             print("📝 Prayer times form processing completed!")
@@ -915,7 +813,6 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             page.screenshot(path="debug_error.png")
             return False
         finally:
-            # Close browser - don't wait if running in headless mode
             if not is_headless:
                 print("⏸️  Browser will stay open for 30 seconds for debugging...")
                 time.sleep(30)
@@ -925,13 +822,11 @@ def main():
     """
     Main entry point
     """
-    # Get credentials from environment variables
     mawaqit_email = os.getenv('MAWAQIT_USER')
     mawaqit_password = os.getenv('MAWAQIT_PASS')
     gmail_user = os.getenv('GMAIL_USER')
     gmail_app_password = os.getenv('GMAIL_APP_PASSWORD')
     
-    # Path to your prayer times directory
     prayer_times_dir = os.getenv('PRAYER_TIMES_DIR', './prayer_times')
     
     if not all([mawaqit_email, mawaqit_password, gmail_user, gmail_app_password]):

@@ -539,8 +539,44 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
         print(f"🖥️ Environment: CI={is_ci}, GitHub Actions={is_github_actions}, Display={has_display}")
         print(f"🖥️ Running in {'headless' if is_headless else 'headed'} mode")
         
-        browser = p.chromium.launch(headless=is_headless)
-        context = browser.new_context()
+        browser = p.chromium.launch(
+            headless=is_headless,
+            args=[
+                '--no-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--disable-extensions',
+                '--no-first-run',
+                '--disable-default-apps',
+                '--disable-infobars',
+                '--window-size=1920,1080',
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            ]
+        )
+        context = browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        )
+        
+        # Add stealth JavaScript to hide automation
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+            });
+            
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+            
+            window.chrome = {
+                runtime: {},
+            };
+        """)
+        
         page = context.new_page()
         
         try:

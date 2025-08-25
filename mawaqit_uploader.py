@@ -281,7 +281,12 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
     
     with sync_playwright() as p:
         # Launch browser - automatically detect if running in headless environment
-        is_headless = os.getenv('CI') or os.getenv('GITHUB_ACTIONS') or not os.getenv('DISPLAY')
+        is_ci = bool(os.getenv('CI'))
+        is_github_actions = bool(os.getenv('GITHUB_ACTIONS')) 
+        has_display = bool(os.getenv('DISPLAY'))
+        is_headless = is_ci or is_github_actions or not has_display
+        
+        print(f"🖥️ Environment: CI={is_ci}, GitHub Actions={is_github_actions}, Display={has_display}")
         print(f"🖥️ Running in {'headless' if is_headless else 'headed'} mode")
         
         browser = p.chromium.launch(headless=is_headless)

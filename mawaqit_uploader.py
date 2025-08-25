@@ -210,48 +210,144 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 
                 page.wait_for_load_state("networkidle")
             
-            # Navigate to mosque/prayer times configuration
-            print("🏛️ Navigating to prayer times configuration...")
+            # Navigate to Configuration → Athan & Iqama
+            print("🏛️ Navigating to Athan & Iqama configuration...")
             
-            # Look for mosque/configuration links (adjust selectors as needed)
             try:
-                # Try different possible navigation paths
-                if page.locator('a:has-text("Mosque")').count() > 0:
-                    page.click('a:has-text("Mosque")')
-                elif page.locator('a:has-text("Configuration")').count() > 0:
-                    page.click('a:has-text("Configuration")')
-                elif page.locator('a:has-text("Prayer Times")').count() > 0:
-                    page.click('a:has-text("Prayer Times")')
-                
+                # Wait for page to load completely
                 page.wait_for_load_state("networkidle")
                 
-                # Look for Athan/Iqama or Prayer Times section
-                if page.locator('a:has-text("Athan")').count() > 0:
-                    page.click('a:has-text("Athan")')
-                elif page.locator('a:has-text("Prayer")').count() > 0:
-                    page.click('a:has-text("Prayer")')
+                # Look for Configuration menu/link
+                if page.locator('text="Configuration"').count() > 0:
+                    page.click('text="Configuration"')
+                    page.wait_for_load_state("networkidle")
+                    print("✅ Clicked Configuration")
                 
-                page.wait_for_load_state("networkidle")
+                # Look for Athan & Iqama link
+                if page.locator('text="Athan & Iqama"').count() > 0:
+                    page.click('text="Athan & Iqama"')
+                    page.wait_for_load_state("networkidle")
+                    print("✅ Navigated to Athan & Iqama page")
+                elif page.locator('text="Athan"').count() > 0:
+                    page.click('text="Athan"')
+                    page.wait_for_load_state("networkidle")
+                    print("✅ Navigated to Athan page")
+                
+                # Wait for the calendar/form to load
+                page.wait_for_timeout(3000)
                 
             except Exception as e:
                 print(f"⚠️ Navigation error: {e}")
-                print("🔍 Current page content preview:")
-                print(page.content()[:500] + "...")
+                print("🔍 Taking screenshot for debugging...")
+                page.screenshot(path="debug_navigation.png")
             
-            # Here you would add the specific logic to fill prayer times
-            # This part needs to be customized based on Mawaqit's actual form structure
+            # Fill prayer times for each day of the month
             print("📅 Filling prayer times...")
             
-            # Example of how prayer times would be filled (needs customization for Mawaqit's interface)
+            filled_days = 0
             for day, times in prayer_times.items():
-                print(f"Processing day {day}...")
-                # You'll need to inspect Mawaqit's form and adjust these selectors
-                # Example structure:
-                # - times['athan']['fajr'] = Fajr Athan time
-                # - times['iqama']['fajr'] = Fajr Iqama time
-                # etc.
+                try:
+                    print(f"Processing day {day}...")
+                    
+                    # Fill Athan times (based on Mawaqit's form structure)
+                    athan_times = times['athan']
+                    
+                    # Try different selector patterns for day inputs
+                    # Pattern 1: day-based inputs
+                    day_selectors = [
+                        f'input[name*="day_{day}"]',
+                        f'input[data-day="{day}"]',
+                        f'td[data-day="{day}"] input',
+                        f'.day-{day} input'
+                    ]
+                    
+                    # Try to find and fill Fajr time for this day
+                    fajr_filled = False
+                    for selector_pattern in day_selectors:
+                        fajr_selectors = [
+                            f'{selector_pattern}[name*="fajr"]',
+                            f'{selector_pattern}[placeholder*="Fajr"]',
+                            f'{selector_pattern}.fajr'
+                        ]
+                        
+                        for fajr_selector in fajr_selectors:
+                            if page.locator(fajr_selector).count() > 0:
+                                page.fill(fajr_selector, athan_times['fajr'])
+                                fajr_filled = True
+                                break
+                        
+                        if fajr_filled:
+                            break
+                    
+                    # Similar pattern for other prayers
+                    prayer_names = ['dhuhr', 'asr', 'maghrib', 'isha']
+                    iqama_times = times['iqama']
+                    
+                    for prayer in prayer_names:
+                        # Fill Athan time
+                        if athan_times.get(prayer):
+                            athan_selectors = [
+                                f'input[name*="day_{day}"][name*="{prayer}"][name*="athan"]',
+                                f'input[data-day="{day}"][data-prayer="{prayer}"][data-type="athan"]',
+                                f'td[data-day="{day}"] input[name*="{prayer}"].athan'
+                            ]
+                            
+                            for selector in athan_selectors:
+                                if page.locator(selector).count() > 0:
+                                    page.fill(selector, athan_times[prayer])
+                                    break
+                        
+                        # Fill Iqama time
+                        if iqama_times.get(prayer):
+                            iqama_selectors = [
+                                f'input[name*="day_{day}"][name*="{prayer}"][name*="iqama"]',
+                                f'input[data-day="{day}"][data-prayer="{prayer}"][data-type="iqama"]',
+                                f'td[data-day="{day}"] input[name*="{prayer}"].iqama'
+                            ]
+                            
+                            for selector in iqama_selectors:
+                                if page.locator(selector).count() > 0:
+                                    page.fill(selector, iqama_times[prayer])
+                                    break
+                    
+                    filled_days += 1
+                    
+                    # Add small delay to avoid overwhelming the form
+                    page.wait_for_timeout(100)
+                    
+                except Exception as e:
+                    print(f"⚠️ Error filling day {day}: {e}")
+                    continue
             
-            print("⚠️ Prayer time filling logic needs to be customized for Mawaqit's interface")
+            print(f"✅ Filled prayer times for {filled_days} days")
+            
+            # Save the changes
+            print("💾 Saving changes...")
+            
+            # Look for Save button
+            save_selectors = [
+                'button:has-text("Save")',
+                'input[type="submit"][value*="Save"]',
+                'button[type="submit"]',
+                '.btn-save',
+                '#save-btn'
+            ]
+            
+            saved = False
+            for save_selector in save_selectors:
+                if page.locator(save_selector).count() > 0:
+                    page.click(save_selector)
+                    saved = True
+                    print("✅ Save button clicked")
+                    break
+            
+            if not saved:
+                print("⚠️ Could not find save button, taking screenshot for debugging")
+                page.screenshot(path="debug_save_button.png")
+            
+            # Wait for save to complete
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(2000)
             
             print("✅ Upload process completed!")
             return True

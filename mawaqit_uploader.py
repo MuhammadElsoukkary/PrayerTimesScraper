@@ -24,6 +24,10 @@ def human_like_mouse_move(page, target_selector):
         target = page.locator(target_selector)
         if target.count() == 0:
             return False
+    
+    except Exception as e:
+        print(f"❌ Error solving reCAPTCHA: {e}")
+        return False
 
 
 def extract_code_from_recent_email(gmail_user, gmail_app_password):

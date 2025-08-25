@@ -74,69 +74,122 @@ def solve_recaptcha_checkbox(page):
     print("🤖 Attempting to solve reCAPTCHA checkbox...")
     
     try:
-        checkbox_selectors = [
-            '.g-recaptcha iframe',
-            'iframe[src*="recaptcha"]',
-            '[role="checkbox"]'
+        # Find the reCAPTCHA anchor iframe (the one with the checkbox)
+        anchor_iframe_selectors = [
+            'iframe[src*="recaptcha/api2/anchor"]',
+            'iframe[title="reCAPTCHA"]',
+            'iframe[name*="a-"]'  # Anchor iframe usually has name starting with "a-"
         ]
         
-        checkbox_found = False
         checkbox_frame = None
         
-        for selector in checkbox_selectors:
+        for selector in anchor_iframe_selectors:
             if page.locator(selector).count() > 0:
-                print(f"✅ Found reCAPTCHA element: {selector}")
+                print(f"✅ Found reCAPTCHA anchor iframe: {selector}")
+                checkbox_frame = page.frame_locator(selector).first
                 
-                if 'iframe' in selector:
-                    checkbox_frame = page.frame_locator(selector)
-                    if checkbox_frame.locator('[role="checkbox"]').count() > 0:
-                        checkbox_found = True
-                        break
-                else:
-                    checkbox_found = True
+                # Check if this iframe contains the checkbox
+                if checkbox_frame.locator('[role="checkbox"]').count() > 0:
+                    print("✅ Confirmed checkbox is in this iframe")
                     break
         
-        if not checkbox_found:
-            print("❌ Could not find reCAPTCHA checkbox")
+        if not checkbox_frame:
+            print("❌ Could not find reCAPTCHA anchor iframe with checkbox")
             return False
         
+        # Add random delay before interaction
+        print("⏳ Adding human-like delay before clicking...")
         time.sleep(random.randint(1000, 3000) / 1000)
         
-        if checkbox_frame:
-            checkbox_element = checkbox_frame.locator('[role="checkbox"]')
-            iframe_element = page.locator('iframe[src*="recaptcha"]')
-            iframe_box = iframe_element.bounding_box()
+        # Click the checkbox within the anchor iframe
+        print("🖱️ Clicking reCAPTCHA checkbox...")
+        checkbox_element = checkbox_frame.locator('[role="checkbox"]')
+        
+        # Try to get the checkbox position for human-like movement
+        try:
+            # Get the anchor iframe element for positioning
+            anchor_iframe = page.locator('iframe[src*="recaptcha/api2/anchor"]').first
+            iframe_box = anchor_iframe.bounding_box()
             
             if iframe_box:
-                human_like_mouse_move(page, 'iframe[src*="recaptcha"]')
-                checkbox_element.click()
-                print("✅ Clicked reCAPTCHA checkbox in iframe")
-            else:
-                checkbox_element.click()
-                print("✅ Clicked reCAPTCHA checkbox")
-        else:
-            if human_like_mouse_move(page, '[role="checkbox"]'):
-                page.click('[role="checkbox"]')
-                print("✅ Clicked reCAPTCHA checkbox with human-like movement")
-            else:
-                page.click('[role="checkbox"]')
-                print("✅ Clicked reCAPTCHA checkbox (fallback)")
+                # Calculate approximate checkbox position within iframe
+                checkbox_x = iframe_box['x'] + 25  # Checkbox is usually ~25px from left
+                checkbox_y = iframe_box['y'] + 25  # And ~25px from top
+                
+                # Human-like mouse movement to checkbox area
+                print("🔄 Moving mouse in human-like pattern...")
+                page.mouse.move(
+                    checkbox_x + random.randint(-50, -20), 
+                    checkbox_y + random.randint(-20, 20)
+                )
+                time.sleep(random.randint(100, 300) / 1000)
+                
+                # Move closer to checkbox
+                page.mouse.move(
+                    checkbox_x + random.randint(-5, 5), 
+                    checkbox_y + random.randint(-5, 5)
+                )
+                time.sleep(random.randint(50, 150) / 1000)
+                
+        except Exception as e:
+            print(f"⚠️ Could not get iframe position for mouse movement: {e}")
         
+        # Click the checkbox
+        checkbox_element.click()
+        print("✅ Clicked reCAPTCHA checkbox")
+        
+        # Wait for reCAPTCHA to process
         print("⏳ Waiting for reCAPTCHA verification...")
-        time.sleep(random.randint(2000, 4000) / 1000)
+        time.sleep(random.randint(3000, 5000) / 1000)
         
-        solved_indicators = [
-            '.g-recaptcha-response[value!=""]',
-            '[aria-checked="true"]',
-            'iframe[src*="recaptcha"][title*="verified"]'
+        # Check if reCAPTCHA was solved (look for success indicators)
+        success_indicators = [
+            # Check if checkbox is marked as checked
+            checkbox_frame.locator('[aria-checked="true"]'),
+            # Check if there's a success checkmark
+            checkbox_frame.locator('.recaptcha-checkbox-checked'),
+            # Check for green checkmark
+            checkbox_frame.locator('[style*="color: rgb(0, 153, 51)"]')
         ]
         
-        for indicator in solved_indicators:
-            if page.locator(indicator).count() > 0:
-                print("✅ reCAPTCHA appears to be solved!")
-                return True
+        for indicator in success_indicators:
+            try:
+                if indicator.count() > 0:
+                    print("✅ reCAPTCHA appears to be solved! (checkbox checked)")
+                    return True
+            except:
+                continue
         
-        print("⚠️ Cannot confirm reCAPTCHA status, proceeding...")
+        # Also check the main page for reCAPTCHA response token
+        try:
+            response_token = page.locator('.g-recaptcha-response').first
+            if response_token.count() > 0:
+                token_value = response_token.get_attribute('value')
+                if token_value and len(token_value) > 10:
+                    print("✅ reCAPTCHA response token found - likely solved!")
+                    return True
+        except:
+            pass
+        
+        # Check if an image challenge appeared
+        challenge_iframe_visible = False
+        try:
+            challenge_iframe = page.locator('iframe[src*="recaptcha/api2/bframe"]')
+            if challenge_iframe.count() > 0:
+                challenge_box = challenge_iframe.first.bounding_box()
+                if challenge_box and challenge_box['height'] > 10:
+                    challenge_iframe_visible = True
+                    print("🖼️ Image challenge appeared - this requires manual solving")
+        except:
+            pass
+        
+        if challenge_iframe_visible:
+            print("❌ reCAPTCHA image challenge detected - cannot solve automatically")
+            print("💡 This requires human intervention to solve the image puzzle")
+            return False
+        
+        # If we can't detect success but no challenge appeared, assume it worked
+        print("⚠️ Cannot confirm reCAPTCHA status, but no challenge detected - proceeding...")
         return True
         
     except Exception as e:

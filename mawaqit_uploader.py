@@ -280,8 +280,11 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
     print(f"   Iqama: {prayer_times[sample_day]['iqama']}")
     
     with sync_playwright() as p:
-        # Launch browser
-        browser = p.chromium.launch(headless=False)  # Set to False for debugging
+        # Launch browser - automatically detect if running in headless environment
+        is_headless = os.getenv('CI') or os.getenv('GITHUB_ACTIONS') or not os.getenv('DISPLAY')
+        print(f"🖥️ Running in {'headless' if is_headless else 'headed'} mode")
+        
+        browser = p.chromium.launch(headless=is_headless)
         context = browser.new_context()
         page = context.new_page()
         
@@ -380,6 +383,7 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 'a[href*="times"]'
             ]
             
+            navigation_success = False
             for link_selector in prayer_time_links:
                 if page.locator(link_selector).count() > 0:
                     print(f"🔗 Found link: {link_selector}")
@@ -387,16 +391,162 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                         page.click(link_selector)
                         page.wait_for_load_state("networkidle")
                         print(f"✅ Clicked: {link_selector}")
+                        navigation_success = True
                         break
                     except Exception as e:
                         print(f"⚠️ Failed to click {link_selector}: {e}")
                         continue
             
+            if not navigation_success:
+                print("⚠️ Could not find prayer times configuration link")
+                page.screenshot(path="debug_no_navigation.png")
+            
             # Take another screenshot after navigation
             page.screenshot(path="debug_prayer_times_page.png")
             
-            print("📝 Prayer times form should now be visible")
-            print("🎉 Basic login and navigation completed successfully!")
+            # Try to find the prayer times form and fill it
+            print("📝 Looking for prayer times form...")
+            
+            # Get today's date to highlight current day
+            today = datetime.now().day
+            print(f"📅 Today is day {today} of the month")
+            
+            filled_days = 0
+            errors = []
+            
+            for day, times in prayer_times.items():
+                try:
+                    day_marker = "🔥 TODAY" if day == today else ""
+                    print(f"Processing day {day} {day_marker}...")
+                    
+                    # Log the times we're about to upload for today
+                    if day == today:
+                        athan = times['athan']
+                        iqama = times['iqama']
+                        print(f"🕐 Today's Athan times: Fajr={athan['fajr']}, Dhuhr={athan['dhuhr']}, Asr={athan['asr']}, Maghrib={athan['maghrib']}, Isha={athan['isha']}")
+                        print(f"🕐 Today's Iqama times: Fajr={iqama['fajr']}, Dhuhr={iqama['dhuhr']}, Asr={iqama['asr']}, Maghrib={iqama['maghrib']}, Isha={iqama['isha']}")
+                    
+                    # Try multiple selector patterns for Mawaqit's form
+                    day_filled = False
+                    
+                    # Pattern 1: Look for inputs with day in name/id
+                    selectors_to_try = [
+                        f'input[name*="day_{day}"]',
+                        f'input[data-day="{day}"]', 
+                        f'input[id*="day_{day}"]',
+                        f'td[data-day="{day}"] input',
+                        f'.day-{day} input',
+                        f'[data-date*="{day:02d}"] input'
+                    ]
+                    
+                    for base_selector in selectors_to_try:
+                        if page.locator(base_selector).count() > 0:
+                            print(f"   ✅ Found inputs with selector: {base_selector}")
+                            
+                            # Try to fill each prayer time
+                            prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']
+                            
+                            for prayer in prayers:
+                                # Fill Athan time
+                                athan_time = times['athan'].get(prayer, '')
+                                if athan_time:
+                                    athan_selectors = [
+                                        f'{base_selector}[name*="{prayer}"][name*="athan"]',
+                                        f'{base_selector}[name*="{prayer}_athan"]',
+                                        f'{base_selector}.{prayer}.athan',
+                                        f'{base_selector}[placeholder*="{prayer.title()}"]'
+                                    ]
+                                    
+                                    for athan_sel in athan_selectors:
+                                        try:
+                                            if page.locator(athan_sel).count() > 0:
+                                                page.fill(athan_sel, athan_time)
+                                                print(f"   ✅ Filled {prayer} athan: {athan_time}")
+                                                break
+                                        except Exception as e:
+                                            continue
+                                
+                                # Fill Iqama time  
+                                iqama_time = times['iqama'].get(prayer, '')
+                                if iqama_time:
+                                    iqama_selectors = [
+                                        f'{base_selector}[name*="{prayer}"][name*="iqama"]',
+                                        f'{base_selector}[name*="{prayer}_iqama"]', 
+                                        f'{base_selector}.{prayer}.iqama'
+                                    ]
+                                    
+                                    for iqama_sel in iqama_selectors:
+                                        try:
+                                            if page.locator(iqama_sel).count() > 0:
+                                                page.fill(iqama_sel, iqama_time)
+                                                print(f"   ✅ Filled {prayer} iqama: {iqama_time}")
+                                                break
+                                        except Exception as e:
+                                            continue
+                            
+                            day_filled = True
+                            break
+                    
+                    if day_filled:
+                        filled_days += 1
+                    else:
+                        errors.append(f"Could not find inputs for day {day}")
+                        if day == today:  # Only screenshot for today if we can't fill it
+                            page.screenshot(path=f"debug_day_{day}_not_found.png")
+                    
+                    # Small delay between days
+                    page.wait_for_timeout(50)
+                    
+                except Exception as e:
+                    error_msg = f"Error filling day {day}: {e}"
+                    print(f"⚠️ {error_msg}")
+                    errors.append(error_msg)
+                    continue
+            
+            print(f"✅ Filled prayer times for {filled_days} days")
+            if errors:
+                print(f"⚠️ Encountered {len(errors)} errors:")
+                for error in errors[:5]:  # Show first 5 errors
+                    print(f"   - {error}")
+            
+            # Try to save the changes
+            print("💾 Looking for save button...")
+            
+            save_selectors = [
+                'button:has-text("Save")',
+                'input[type="submit"][value*="Save"]',
+                'button[type="submit"]',
+                'button:has-text("Update")',
+                '.btn-save',
+                '.btn-primary:has-text("Save")',
+                '#save-btn'
+            ]
+            
+            saved = False
+            for save_selector in save_selectors:
+                if page.locator(save_selector).count() > 0:
+                    try:
+                        page.click(save_selector)
+                        saved = True
+                        print(f"✅ Save button clicked: {save_selector}")
+                        break
+                    except Exception as e:
+                        print(f"⚠️ Failed to click save button {save_selector}: {e}")
+                        continue
+            
+            if not saved:
+                print("⚠️ Could not find or click save button")
+                page.screenshot(path="debug_save_button.png")
+            else:
+                # Wait for save to complete
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(2000)
+                print("✅ Save completed!")
+            
+            # Final screenshot
+            page.screenshot(path="debug_final_state.png")
+            
+            print("📝 Prayer times form processing completed!")
             
             return True
             
@@ -405,9 +555,10 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             page.screenshot(path="debug_error.png")
             return False
         finally:
-            # Don't close browser immediately for debugging
-            print("⏸️  Browser will stay open for 30 seconds for debugging...")
-            time.sleep(30)
+            # Close browser - don't wait if running in headless mode
+            if not is_headless:
+                print("⏸️  Browser will stay open for 30 seconds for debugging...")
+                time.sleep(30)
             browser.close()
 
 def main():

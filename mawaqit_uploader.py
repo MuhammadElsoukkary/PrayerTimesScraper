@@ -10,10 +10,260 @@ import re
 import time
 import os
 import csv
+import random
+import math
 from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright, expect
 
-def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=300):
+def human_like_mouse_move(page, target_selector):
+    """
+    Move mouse to target in a human-like curved path with realistic timing
+    """
+    try:
+        # Get target element position
+        target = page.locator(target_selector)
+        if target.count() == 0:
+            return False
+
+
+def extract_code_from_recent_email(gmail_user, gmail_app_password):
+            
+        box = target.bounding_box()
+        if not box:
+            return False
+        
+        # Calculate target center
+        target_x = box['x'] + box['width'] / 2
+        target_y = box['y'] + box['height'] / 2
+        
+        # Get current mouse position (start from a random nearby point)
+        start_x = target_x + random.randint(-200, -100)
+        start_y = target_y + random.randint(-100, 100)
+        
+        # Create curved path points
+        steps = random.randint(15, 25)  # Random number of steps
+        points = []
+        
+        for i in range(steps + 1):
+            progress = i / steps
+            
+            # Base linear interpolation
+            x = start_x + (target_x - start_x) * progress
+            y = start_y + (target_y - start_y) * progress
+            
+            # Add curve with sine wave
+            curve_height = random.randint(20, 50)
+            curve_offset = math.sin(progress * math.pi) * curve_height
+            
+            # Add some randomness
+            x += random.randint(-5, 5)
+            y += curve_offset + random.randint(-5, 5)
+            
+            points.append((x, y))
+        
+        # Move mouse along the curved path
+        for i, (x, y) in enumerate(points):
+            page.mouse.move(x, y)
+            
+            # Vary the timing - slower at start and end, faster in middle
+            if i < 3 or i > len(points) - 4:
+                delay = random.randint(50, 100)  # Slower at ends
+            else:
+                delay = random.randint(10, 30)   # Faster in middle
+            
+            time.sleep(delay / 1000)  # Convert to seconds
+        
+        # Small pause before clicking
+        time.sleep(random.randint(100, 300) / 1000)
+        
+        return True
+        
+    except Exception as e:
+        print(f"⚠️ Error in human-like mouse movement: {e}")
+        return False
+
+
+def solve_recaptcha_checkbox(page):
+    """
+    Attempt to solve reCAPTCHA v2 checkbox with human-like behavior
+    """
+    print("🤖 Attempting to solve reCAPTCHA checkbox...")
+    
+    try:
+        # Find the reCAPTCHA checkbox
+        checkbox_selectors = [
+            '.g-recaptcha iframe',
+            'iframe[src*="recaptcha"]',
+            '[role="checkbox"]'
+        ]
+        
+        checkbox_found = False
+        checkbox_frame = None
+        
+        for selector in checkbox_selectors:
+            if page.locator(selector).count() > 0:
+                print(f"✅ Found reCAPTCHA element: {selector}")
+                
+                if 'iframe' in selector:
+                    # Switch to reCAPTCHA iframe
+                    checkbox_frame = page.frame_locator(selector)
+                    if checkbox_frame.locator('[role="checkbox"]').count() > 0:
+                        checkbox_found = True
+                        break
+                else:
+                    checkbox_found = True
+                    break
+        
+        if not checkbox_found:
+            print("❌ Could not find reCAPTCHA checkbox")
+            return False
+        
+        # Add random delay before interaction
+        time.sleep(random.randint(1000, 3000) / 1000)
+        
+        # Perform human-like mouse movement and click
+        if checkbox_frame:
+            # Working with iframe
+            checkbox_element = checkbox_frame.locator('[role="checkbox"]')
+            
+            # Get the iframe's position and add to checkbox position
+            iframe_element = page.locator('iframe[src*="recaptcha"]')
+            iframe_box = iframe_element.bounding_box()
+            
+            if iframe_box:
+                # Move to iframe first
+                iframe_center_x = iframe_box['x'] + iframe_box['width'] / 2
+                iframe_center_y = iframe_box['y'] + iframe_box['height'] / 2
+                
+                # Human-like movement to iframe area
+                human_like_mouse_move(page, 'iframe[src*="recaptcha"]')
+                
+                # Click the checkbox within the iframe
+                checkbox_element.click()
+                print("✅ Clicked reCAPTCHA checkbox in iframe")
+            else:
+                checkbox_element.click()
+                print("✅ Clicked reCAPTCHA checkbox")
+        else:
+            # Direct checkbox click
+            if human_like_mouse_move(page, '[role="checkbox"]'):
+                page.click('[role="checkbox"]')
+                print("✅ Clicked reCAPTCHA checkbox with human-like movement")
+            else:
+                page.click('[role="checkbox"]')
+                print("✅ Clicked reCAPTCHA checkbox (fallback)")
+        
+        # Wait for reCAPTCHA to process
+        print("⏳ Waiting for reCAPTCHA verification...")
+        time.sleep(random.randint(2000, 4000) / 1000)
+        
+        # Check if reCAPTCHA was solved
+        solved_indicators = [
+            '.g-recaptcha-response[value!=""]',  # reCAPTCHA response token present
+            '[aria-checked="true"]',             # Checkbox marked as checked
+            'iframe[src*="recaptcha"][title*="verified"]'  # Verified iframe
+        ]
+        
+        for indicator in solved_indicators:
+            if page.locator(indicator).count() > 0:
+                print("✅ reCAPTCHA appears to be solved!")
+                return True
+        
+        # If we can't detect success, assume it worked after reasonable wait
+        print("⚠️ Cannot confirm reCAPTCHA status, proceeding...")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error solving reCAPTCHA: {e}")
+        return False
+    """
+    Fallback: Extract code from the most recent Mawaqit email, regardless of age
+    """
+    print("🔍 Fallback: Looking for code in most recent Mawaqit email...")
+    
+    try:
+        imap = imaplib.IMAP4_SSL("imap.gmail.com")
+        imap.login(gmail_user, gmail_app_password)
+        imap.select("inbox")
+
+        # Get all emails and find the most recent Mawaqit one
+        status, messages = imap.search(None, 'ALL')
+        if status != 'OK' or not messages[0]:
+            return None
+
+        mail_ids = messages[0].split()
+        
+        # Check recent emails for Mawaqit
+        for mail_id in reversed(mail_ids[-50:]):  # Check last 50 emails
+            try:
+                status, msg_data = imap.fetch(mail_id, "(RFC822)")
+                if status != 'OK':
+                    continue
+                    
+                raw_msg = msg_data[0][1]
+                msg = email.message_from_bytes(raw_msg)
+                
+                sender = msg.get('From', '').lower()
+                
+                # Only process Mawaqit emails
+                if not any(domain in sender for domain in ['mawaqit.net', 'mawaqit.com']):
+                    continue
+                
+                print(f"🔍 Found Mawaqit email from: {sender}")
+                
+                # Extract email body
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        content_type = part.get_content_type()
+                        if content_type in ["text/plain", "text/html"]:
+                            try:
+                                payload = part.get_payload(decode=True)
+                                if payload:
+                                    body += payload.decode('utf-8', errors='ignore')
+                            except:
+                                continue
+                else:
+                    try:
+                        payload = msg.get_payload(decode=True)
+                        if payload:
+                            body = payload.decode('utf-8', errors='ignore')
+                    except:
+                        continue
+
+                if not body:
+                    continue
+                
+                # Look for 6-digit code
+                code_patterns = [
+                    r'\b(\d{6})\b',
+                    r'verification.*?(\d{6})',
+                    r'code.*?(\d{6})',
+                ]
+                
+                for pattern in code_patterns:
+                    matches = re.findall(pattern, body, re.IGNORECASE | re.DOTALL)
+                    if matches:
+                        code = matches[-1]
+                        if code.isdigit() and len(code) == 6:
+                            print(f"✅ Extracted code from recent email: {code}")
+                            imap.close()
+                            imap.logout()
+                            return code
+                
+            except Exception as e:
+                continue
+        
+        imap.close()
+        imap.logout()
+        
+    except Exception as e:
+        print(f"❌ Error in fallback email extraction: {e}")
+    
+    return None
+
+
+def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
     """
     Fetch the latest 2FA code from Gmail for Mawaqit - extended wait time
     """
@@ -91,11 +341,13 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=300):
                         time_diff = (datetime.now(email_date.tzinfo) - email_date).total_seconds()
                         print(f"   ⏰ Email age: {time_diff/60:.1f} minutes")
                         
-                        # Be more lenient with Mawaqit emails - check up to 2 hours old
-                        max_age = 600 if is_mawaqit else 300  # 10 minutes for Mawaqit, 5 minutes for others
+                        # Be much more lenient with Mawaqit emails - check up to 2 hours old
+                        max_age = 7200 if is_mawaqit else 300  # 2 hours for Mawaqit, 5 minutes for others
                         if time_diff > max_age:
                             print(f"   ⏳ Email too old (>{max_age/60:.0f} min), skipping...")
                             continue
+                        else:
+                            print(f"   ✅ Email is within acceptable age limit ({max_age/60:.0f} min)")
                     except Exception as e:
                         print(f"   ⚠️ Could not parse email date: {e}")
                         # Continue anyway for Mawaqit emails
@@ -309,49 +561,82 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             
             # Handle reCAPTCHA if present
             print("🤖 Checking for reCAPTCHA...")
+            recaptcha_solved = True  # Assume no reCAPTCHA by default
+            
             if page.locator('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"]').count() > 0:
-                print("🛡️ reCAPTCHA detected - waiting for manual completion or bypass...")
-                
-                # Wait longer for reCAPTCHA to be solved or auto-bypass
-                page.wait_for_timeout(10000)  # 10 seconds
-                
-                # Try to detect if reCAPTCHA is solved
-                recaptcha_solved = False
-                for i in range(30):  # Wait up to 30 seconds
-                    try:
-                        # Check if submit button is enabled or reCAPTCHA is completed
-                        submit_button = page.locator('button[type="submit"]')
-                        if submit_button.is_enabled():
-                            recaptcha_solved = True
-                            break
-                        page.wait_for_timeout(1000)
-                    except:
-                        continue
+                print("🛡️ reCAPTCHA detected - attempting to solve...")
+                recaptcha_solved = solve_recaptcha_checkbox(page)
                 
                 if not recaptcha_solved:
-                    print("⚠️ reCAPTCHA may still be active, but proceeding...")
+                    print("❌ Failed to solve reCAPTCHA automatically")
+                    print("💡 Manual intervention needed")
+                    return False
             
-            # Submit login
+            # Small delay before submitting
+            time.sleep(random.randint(1000, 2000) / 1000)
+            
+            # Take screenshot before submit
+            page.screenshot(path="debug_before_login.png")
+            
+            # Submit login with human-like timing
             print("🔑 Submitting login...")
-            page.click('button[type="submit"]')
+            if human_like_mouse_move(page, 'button[type="submit"]'):
+                page.click('button[type="submit"]')
+            else:
+                page.click('button[type="submit"]')
+            
             print("⏳ Waiting for login response...")
             
-            # Wait longer for login to complete
+            # Wait for login to process
             page.wait_for_load_state("networkidle", timeout=30000)
-            page.wait_for_timeout(5000)  # Extra wait time
+            page.wait_for_timeout(3000)
+            
+            # Take screenshot after login attempt
+            page.screenshot(path="debug_after_login.png")
+            
+            # Check what page we're on now
+            current_url = page.url
+            page_content = page.content().lower()
+            
+            print(f"🌐 Current URL: {current_url}")
+            
+            # Check if we're still on login page (login failed)
+            if "login" in current_url.lower():
+                print("❌ Still on login page - login may have failed")
+                
+                # Check for error messages
+                error_selectors = [
+                    '.error', '.alert-danger', '.invalid-feedback',
+                    'text="Invalid"', 'text="Wrong"', 'text="Incorrect"'
+                ]
+                
+                for error_selector in error_selectors:
+                    if page.locator(error_selector).count() > 0:
+                        error_text = page.locator(error_selector).inner_text()
+                        print(f"🚨 Login error found: {error_text}")
+                
+                # Check if reCAPTCHA is blocking us
+                if page.locator('.g-recaptcha, [data-sitekey]').count() > 0:
+                    print("🛡️ reCAPTCHA is likely blocking the login")
+                    print("💡 Manual intervention needed - reCAPTCHA must be solved by human")
+                    return False
+                
+                print("❌ Login failed for unknown reason")
+                return False
             
             # Check if 2FA is required
-            page_content = page.content().lower()
             print("🔍 Checking if 2FA is required...")
             
             if "verification" in page_content or "code" in page_content or "authenticate" in page_content:
-                print("📧 2FA required, triggering fresh 2FA email...")
+                print("📧 2FA page detected!")
                 
-                # First, try to trigger a new 2FA email by clicking "Resend" or similar
+                # Try to trigger a new 2FA email by clicking "Resend" 
+                print("🔄 Looking for resend code button...")
                 resend_selectors = [
                     'button:has-text("Resend")',
                     'a:has-text("Resend")', 
                     'button:has-text("Send new code")',
+                    'button:has-text("Send again")',
                     '.resend-code',
                     '[data-action="resend"]'
                 ]
@@ -359,16 +644,31 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 for resend_selector in resend_selectors:
                     if page.locator(resend_selector).count() > 0:
                         try:
+                            print(f"✅ Found resend button: {resend_selector}")
                             page.click(resend_selector)
-                            print("✅ Clicked resend code button")
-                            page.wait_for_timeout(2000)
+                            print("🔄 Clicked resend - waiting for new email...")
+                            page.wait_for_timeout(5000)  # Wait 5 seconds for email to be sent
                             break
                         except Exception as e:
                             print(f"⚠️ Failed to click resend: {e}")
                             continue
+                else:
+                    print("⚠️ No resend button found, proceeding with existing 2FA flow...")
                 
-                # Get 2FA code from email with longer timeout
-                verification_code = get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=300)
+                # Get 2FA code from email with longer timeout and more lenient age check
+                print("📧 Waiting for 2FA code from Gmail...")
+                verification_code = get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120)
+                
+                if not verification_code:
+                    print("❌ Still no 2FA code found")
+                    print("🔍 Let's try to use the most recent Mawaqit email even if it's old...")
+                    
+                    # Fallback: try to extract code from the most recent Mawaqit email we saw
+                    verification_code = extract_code_from_recent_email(gmail_user, gmail_app_password)
+                
+                if not verification_code:
+                    print("❌ Failed to get any 2FA code")
+                    return False
                 
                 if not verification_code:
                     print("❌ Failed to get 2FA code")

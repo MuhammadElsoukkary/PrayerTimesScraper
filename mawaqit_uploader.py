@@ -10,7 +10,7 @@ import re
 import time
 import os
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright, expect
 
 def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
@@ -20,71 +20,167 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
     print("🔍 Checking Gmail for 2FA code...")
     
     start_time = time.time()
+    attempt = 0
+    
     while time.time() - start_time < max_wait:
+        attempt += 1
+        print(f"🔄 Attempt {attempt} to find 2FA code...")
+        
         try:
             # Connect to Gmail via IMAP
+            print("📧 Connecting to Gmail...")
             imap = imaplib.IMAP4_SSL("imap.gmail.com")
             imap.login(gmail_user, gmail_app_password)
             imap.select("inbox")
+            print("✅ Connected to Gmail successfully")
 
-            # Search for recent emails from Mawaqit
-            status, messages = imap.search(None, '(FROM "noreply@mawaqit.net" OR FROM "no-reply@mawaqit.net")')
+            # Get all recent emails (last 50) and check them manually
+            print("🔍 Fetching recent emails...")
+            status, messages = imap.search(None, 'ALL')
             
             if status != 'OK' or not messages[0]:
-                print("⏳ No Mawaqit emails found, waiting...")
+                print("⏳ No emails found, waiting...")
+                imap.close()
+                imap.logout()
                 time.sleep(10)
                 continue
 
             mail_ids = messages[0].split()
+            print(f"📧 Found {len(mail_ids)} total emails in inbox")
             
             # Check the most recent emails for 2FA code
-            for mail_id in reversed(mail_ids[-5:]):  # Check last 5 emails
-                status, msg_data = imap.fetch(mail_id, "(RFC822)")
-                if status != 'OK':
-                    continue
-                    
-                raw_msg = msg_data[0][1]
-                msg = email.message_from_bytes(raw_msg)
-                
-                # Get email date
-                email_date = email.utils.parsedate_to_datetime(msg['Date'])
-                
-                # Only process emails from the last 10 minutes
-                if (datetime.now(email_date.tzinfo) - email_date).total_seconds() > 600:
-                    continue
-                
-                # Extract email body
-                body = ""
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == "text/plain":
-                            try:
-                                body += part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                            except:
-                                continue
-                else:
-                    try:
-                        body = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
-                    except:
-                        continue
-
-                # Look for 6-digit verification code
-                code_match = re.search(r'\b(\d{6})\b', body)
-                if code_match and 'verification' in body.lower():
-                    code = code_match.group(1)
-                    print(f"✅ Found 2FA code: {code}")
-                    imap.close()
-                    imap.logout()
-                    return code
+            recent_emails = mail_ids[-20:]  # Check last 20 emails
+            print(f"🔍 Checking {len(recent_emails)} most recent emails...")
             
-            print("⏳ No recent 2FA code found, waiting...")
+            for i, mail_id in enumerate(reversed(recent_emails)):
+                try:
+                    print(f"📧 Checking email {i+1}/{len(recent_emails)}...")
+                    
+                    status, msg_data = imap.fetch(mail_id, "(RFC822)")
+                    if status != 'OK':
+                        continue
+                        
+                    raw_msg = msg_data[0][1]
+                    msg = email.message_from_bytes(raw_msg)
+                    
+                    # Get sender and subject for debugging
+                    sender = msg.get('From', '')
+                    subject = msg.get('Subject', '')
+                    date_str = msg.get('Date', '')
+                    
+                    print(f"   From: {sender}")
+                    print(f"   Subject: {subject}")
+                    print(f"   Date: {date_str}")
+                    
+                    # Check if it's from Mawaqit or contains verification keywords
+                    sender_lower = sender.lower()
+                    subject_lower = subject.lower()
+                    
+                    is_mawaqit = any(domain in sender_lower for domain in ['mawaqit.net', 'mawaqit.com'])
+                    has_verification_keywords = any(keyword in subject_lower for keyword in ['verification', 'code', 'login', 'authenticate', 'security'])
+                    
+                    if not is_mawaqit and not has_verification_keywords:
+                        print("   ⏭️ Not from Mawaqit or verification-related, skipping...")
+                        continue
+                    
+                    print("   ✅ Email looks relevant, checking content...")
+                    
+                    # Get email date and check if it's recent
+                    try:
+                        email_date = email.utils.parsedate_to_datetime(msg['Date'])
+                        time_diff = (datetime.now(email_date.tzinfo) - email_date).total_seconds()
+                        print(f"   ⏰ Email age: {time_diff/60:.1f} minutes")
+                        
+                        if time_diff > 1800:  # 30 minutes
+                            print("   ⏳ Email too old, skipping...")
+                            continue
+                    except Exception as e:
+                        print(f"   ⚠️ Could not parse email date: {e}")
+                        # Continue anyway
+                    
+                    # Extract email body
+                    body = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            content_type = part.get_content_type()
+                            if content_type in ["text/plain", "text/html"]:
+                                try:
+                                    payload = part.get_payload(decode=True)
+                                    if payload:
+                                        decoded_content = payload.decode('utf-8', errors='ignore')
+                                        body += decoded_content
+                                except Exception as e:
+                                    print(f"   ⚠️ Error decoding email part: {e}")
+                                    continue
+                    else:
+                        try:
+                            payload = msg.get_payload(decode=True)
+                            if payload:
+                                body = payload.decode('utf-8', errors='ignore')
+                        except Exception as e:
+                            print(f"   ⚠️ Error decoding email: {e}")
+                            continue
+
+                    if not body:
+                        print("   ⚠️ Empty email body, skipping...")
+                        continue
+                    
+                    print(f"   📄 Email body length: {len(body)} characters")
+                    
+                    # Look for verification-related keywords in body
+                    verification_keywords = ['verification', 'verify', 'authenticate', 'login', 'code', 'mawaqit', 'security']
+                    body_lower = body.lower()
+                    
+                    matching_keywords = [kw for kw in verification_keywords if kw in body_lower]
+                    if matching_keywords:
+                        print(f"   ✅ Found verification keywords: {matching_keywords}")
+                    else:
+                        print("   ⏳ No verification keywords in body, skipping...")
+                        continue
+                    
+                    # Look for 6-digit verification code
+                    code_patterns = [
+                        r'\b(\d{6})\b',  # Any 6 digits
+                        r'verification.*?(\d{6})',  # 6 digits after "verification"
+                        r'code.*?(\d{6})',  # 6 digits after "code"
+                        r'(\d{6}).*?verification',  # 6 digits before "verification"
+                        r'(\d{6}).*?code',  # 6 digits before "code"
+                    ]
+                    
+                    for pattern_name, pattern in enumerate(code_patterns):
+                        code_matches = re.findall(pattern, body, re.IGNORECASE | re.DOTALL)
+                        if code_matches:
+                            code = code_matches[-1]  # Get the last match
+                            print(f"   ✅ Found 2FA code with pattern {pattern_name + 1}: {code}")
+                            
+                            # Verify it's a valid 6-digit code
+                            if code.isdigit() and len(code) == 6:
+                                print(f"✅ Valid 2FA code found: {code}")
+                                imap.close()
+                                imap.logout()
+                                return code
+                            else:
+                                print(f"   ⚠️ Invalid code format: {code}")
+                    
+                    print("   ⏳ No verification code found in this email")
+                    
+                except Exception as e:
+                    print(f"   ❌ Error processing email {mail_id}: {e}")
+                    continue
+            
+            print("⏳ No recent 2FA code found in current batch, waiting...")
             imap.close()
             imap.logout()
-            time.sleep(10)
+            time.sleep(15)  # Wait longer between attempts
             
         except Exception as e:
             print(f"❌ Error checking email: {e}")
-            time.sleep(10)
+            try:
+                imap.close()
+                imap.logout()
+            except:
+                pass
+            time.sleep(15)
     
     print("❌ Timeout waiting for 2FA code")
     return None
@@ -201,13 +297,15 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             
             # Submit login
             page.click('button[type="submit"]')
-            print("🔑 Login submitted, waiting for 2FA...")
+            print("🔑 Login submitted, waiting for response...")
             
-            # Wait for 2FA page or dashboard
+            # Wait for page to load
             page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(3000)  # Give it extra time
             
             # Check if 2FA is required
-            if "verification" in page.content().lower() or "code" in page.content().lower():
+            page_content = page.content().lower()
+            if "verification" in page_content or "code" in page_content or "authenticate" in page_content:
                 print("📧 2FA required, fetching code from Gmail...")
                 
                 # Get 2FA code from email
@@ -217,15 +315,52 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     print("❌ Failed to get 2FA code")
                     return False
                 
-                # Enter 2FA code
-                code_input = page.locator('input[placeholder*="code" i], input[name*="code" i], input[type="text"]').first
-                code_input.fill(verification_code)
+                # Enter 2FA code - try different input selectors
+                code_input_selectors = [
+                    'input[placeholder*="code" i]',
+                    'input[name*="code" i]',
+                    'input[type="text"]',
+                    'input[type="number"]',
+                    '.form-control'
+                ]
+                
+                code_entered = False
+                for selector in code_input_selectors:
+                    if page.locator(selector).count() > 0:
+                        page.fill(selector, verification_code)
+                        code_entered = True
+                        print(f"✅ 2FA code entered using selector: {selector}")
+                        break
+                
+                if not code_entered:
+                    print("❌ Could not find 2FA input field")
+                    page.screenshot(path="debug_2fa_input.png")
+                    return False
                 
                 # Submit 2FA
-                page.click('button[type="submit"]')
-                print("✅ 2FA code submitted")
+                submit_selectors = [
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    'button:has-text("Verify")',
+                    'button:has-text("Submit")',
+                    '.btn-primary'
+                ]
+                
+                submitted = False
+                for selector in submit_selectors:
+                    if page.locator(selector).count() > 0:
+                        page.click(selector)
+                        submitted = True
+                        print(f"✅ 2FA submitted using selector: {selector}")
+                        break
+                
+                if not submitted:
+                    print("❌ Could not find submit button for 2FA")
+                    page.screenshot(path="debug_2fa_submit.png")
+                    return False
                 
                 page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(3000)
             
             # Navigate to Configuration → Athan & Iqama
             print("🏛️ Navigating to Athan & Iqama configuration...")
@@ -362,61 +497,4 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             
             saved = False
             for save_selector in save_selectors:
-                if page.locator(save_selector).count() > 0:
-                    page.click(save_selector)
-                    saved = True
-                    print("✅ Save button clicked")
-                    break
-            
-            if not saved:
-                print("⚠️ Could not find save button, taking screenshot for debugging")
-                page.screenshot(path="debug_save_button.png")
-            
-            # Wait for save to complete
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
-            
-            print("✅ Upload process completed!")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error during upload: {e}")
-            return False
-        finally:
-            browser.close()
-
-def main():
-    """
-    Main entry point
-    """
-    # Get credentials from environment variables
-    mawaqit_email = os.getenv('MAWAQIT_USER')
-    mawaqit_password = os.getenv('MAWAQIT_PASS')
-    gmail_user = os.getenv('GMAIL_USER')
-    gmail_app_password = os.getenv('GMAIL_APP_PASSWORD')
-    
-    # Path to your prayer times directory
-    prayer_times_dir = os.getenv('PRAYER_TIMES_DIR', './prayer_times')
-    
-    if not all([mawaqit_email, mawaqit_password, gmail_user, gmail_app_password]):
-        print("❌ Missing required environment variables")
-        print("Required: MAWAQIT_USER, MAWAQIT_PASS, GMAIL_USER, GMAIL_APP_PASSWORD")
-        return False
-    
-    success = upload_to_mawaqit(
-        mawaqit_email=mawaqit_email,
-        mawaqit_password=mawaqit_password,
-        gmail_user=gmail_user,
-        gmail_app_password=gmail_app_password,
-        prayer_times_dir=prayer_times_dir
-    )
-    
-    if success:
-        print("🎉 Mawaqit upload completed successfully!")
-    else:
-        print("💥 Mawaqit upload failed!")
-    
-    return success
-
-if __name__ == "__main__":
-    main()
+                if page.

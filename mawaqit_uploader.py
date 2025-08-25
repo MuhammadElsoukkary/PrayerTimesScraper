@@ -55,7 +55,7 @@ def solve_recaptcha_with_nocaptchaai(page, site_key, api_key="alsalaam465-80e910
 # ------------------------------
 def upload_to_mawaqit():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
         # Navigate to Mawaqit login page

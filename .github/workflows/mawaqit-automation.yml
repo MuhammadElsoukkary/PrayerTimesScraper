@@ -1,5 +1,4 @@
 name: Update Mawaqit Prayer Times
-
 on:
   schedule:
     # Run every Sunday at 6 AM UTC (adjust timezone as needed)
@@ -39,8 +38,8 @@ jobs:
         
     - name: Upload to Mawaqit
       env:
-        MAWAQIT_EMAIL: ${{ secrets.MAWAQIT_USER }}
-        MAWAQIT_PASSWORD: ${{ secrets.MAWAQIT_PASS }}
+        MAWAQIT_USER: ${{ secrets.MAWAQIT_USER }}
+        MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         PRAYER_TIMES_DIR: ./prayer_times
@@ -56,4 +55,5 @@ jobs:
           *.log
           screenshots/
           debug_*.png
+        retention-days: 7
       continue-on-error: true

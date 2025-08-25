@@ -153,11 +153,22 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
     athan_csv_path = os.path.join(prayer_times_dir, f'athan_times_{current_month}.csv')
     iqama_csv_path = os.path.join(prayer_times_dir, f'iqama_times_{current_month}.csv')
     
+    print(f"🗓️ Current month: {current_month}")
+    print(f"📂 Looking for Athan CSV: {athan_csv_path}")
+    print(f"📂 Looking for Iqama CSV: {iqama_csv_path}")
+    
     # Check if CSV files exist
     if not os.path.exists(athan_csv_path) or not os.path.exists(iqama_csv_path):
         print(f"❌ CSV files not found:")
-        print(f"   Athan: {athan_csv_path}")
-        print(f"   Iqama: {iqama_csv_path}")
+        print(f"   Athan exists: {os.path.exists(athan_csv_path)}")
+        print(f"   Iqama exists: {os.path.exists(iqama_csv_path)}")
+        
+        # List what files ARE in the directory
+        if os.path.exists(prayer_times_dir):
+            print(f"📁 Files in {prayer_times_dir}:")
+            for file in os.listdir(prayer_times_dir):
+                print(f"   - {file}")
+        
         return False
     
     # Read prayer times from CSV files
@@ -165,6 +176,12 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
     if not prayer_times:
         print("❌ No prayer times found in CSV files")
         return False
+    
+    # Log some sample data
+    sample_day = list(prayer_times.keys())[0]
+    print(f"📊 Sample data for day {sample_day}:")
+    print(f"   Athan: {prayer_times[sample_day]['athan']}")
+    print(f"   Iqama: {prayer_times[sample_day]['iqama']}")
     
     with sync_playwright() as p:
         # Launch browser
@@ -244,10 +261,20 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             # Fill prayer times for each day of the month
             print("📅 Filling prayer times...")
             
+            # Get today's date to highlight current day
+            today = datetime.now().day
+            print(f"📅 Today is day {today} of the month")
+            
             filled_days = 0
             for day, times in prayer_times.items():
                 try:
-                    print(f"Processing day {day}...")
+                    day_marker = "🔥 TODAY" if day == today else ""
+                    print(f"Processing day {day} {day_marker}...")
+                    
+                    # Log the times we're about to upload for today
+                    if day == today:
+                        print(f"🕐 Today's Athan times: Fajr={times['athan']['fajr']}, Dhuhr={times['athan']['dhuhr']}, Asr={times['athan']['asr']}, Maghrib={times['athan']['maghrib']}, Isha={times['athan']['isha']}")
+                        print(f"🕐 Today's Iqama times: Fajr={times['iqama']['fajr']}, Dhuhr={times['iqama']['dhuhr']}, Asr={times['iqama']['asr']}, Maghrib={times['iqama']['maghrib']}, Isha={times['iqama']['isha']}")
                     
                     # Fill Athan times (based on Mawaqit's form structure)
                     athan_times = times['athan']

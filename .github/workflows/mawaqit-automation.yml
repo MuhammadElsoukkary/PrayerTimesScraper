@@ -19,16 +19,10 @@ jobs:
       with:
         python-version: '3.11'
         
-    - name: Install Python dependencies
+    - name: Install Python dependencies for uploader
       run: |
         pip install playwright imaplib2
         playwright install chromium
-        
-    - name: Install additional dependencies
-      run: |
-        # Add any other dependencies your scraper needs
-        pip install -r requirements.txt
-      continue-on-error: true
       
     - name: Run Prayer Times Scraper
       run: |

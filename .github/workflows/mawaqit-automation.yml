@@ -32,10 +32,16 @@ jobs:
       
     - name: Run Prayer Times Scraper
       run: |
-        # Run your Node.js scraper
+        # Install Node.js dependencies
         npm install
-        node scraper.js
-        # This should create files in ./prayer_times/ directory
+        
+        # Run the prayer times scraper
+        echo "🚀 Running prayer times scraper..."
+        node extract-prayer-times.js
+        
+        # Verify CSV files were created
+        echo "📁 Prayer times directory contents:"
+        ls -la ./prayer_times/ || echo "No prayer_times directory found"
         
     - name: Upload to Mawaqit
       env:

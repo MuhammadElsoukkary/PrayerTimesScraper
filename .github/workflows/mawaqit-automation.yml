@@ -32,9 +32,10 @@ jobs:
       
     - name: Run Prayer Times Scraper
       run: |
-        # Replace this with your actual scraper command
-        python scraper.py
-        # or whatever command generates your CSV file
+        # Run your Node.js scraper
+        npm install
+        node scraper.js
+        # This should create files in ./prayer_times/ directory
         
     - name: Upload to Mawaqit
       env:
@@ -42,7 +43,7 @@ jobs:
         MAWAQIT_PASSWORD: ${{ secrets.MAWAQIT_PASS }}
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        CSV_FILE_PATH: prayer_times.csv  # Adjust path as needed
+        PRAYER_TIMES_DIR: ./prayer_times
       run: |
         python mawaqit_uploader.py
         

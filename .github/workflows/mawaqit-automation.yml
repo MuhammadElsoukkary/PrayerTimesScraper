@@ -49,10 +49,11 @@ jobs:
         
     - name: Upload logs (on failure)
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: error-logs
         path: |
           *.log
           screenshots/
+          debug_*.png
       continue-on-error: true

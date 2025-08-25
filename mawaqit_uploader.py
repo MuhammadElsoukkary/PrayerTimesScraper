@@ -13,9 +13,9 @@ import csv
 from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright, expect
 
-def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
+def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=300):
     """
-    Fetch the latest 2FA code from Gmail for Mawaqit
+    Fetch the latest 2FA code from Gmail for Mawaqit - extended wait time
     """
     print("🔍 Checking Gmail for 2FA code...")
     
@@ -77,7 +77,7 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                     subject_lower = subject.lower()
                     
                     is_mawaqit = any(domain in sender_lower for domain in ['mawaqit.net', 'mawaqit.com'])
-                    has_verification_keywords = any(keyword in subject_lower for keyword in ['verification', 'code', 'login', 'authenticate', 'security'])
+                    has_verification_keywords = any(keyword in subject_lower for keyword in ['verification', 'code', 'login', 'authenticate', 'security', 'authentication'])
                     
                     if not is_mawaqit and not has_verification_keywords:
                         print("   ⏭️ Not from Mawaqit or verification-related, skipping...")
@@ -85,18 +85,22 @@ def get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=120):
                     
                     print("   ✅ Email looks relevant, checking content...")
                     
-                    # Get email date and check if it's recent
+                    # Get email date and check if it's recent (more lenient for Mawaqit emails)
                     try:
                         email_date = email.utils.parsedate_to_datetime(msg['Date'])
                         time_diff = (datetime.now(email_date.tzinfo) - email_date).total_seconds()
                         print(f"   ⏰ Email age: {time_diff/60:.1f} minutes")
                         
-                        if time_diff > 1800:  # 30 minutes
-                            print("   ⏳ Email too old, skipping...")
+                        # Be more lenient with Mawaqit emails - check up to 2 hours old
+                        max_age = 600 if is_mawaqit else 300  # 10 minutes for Mawaqit, 5 minutes for others
+                        if time_diff > max_age:
+                            print(f"   ⏳ Email too old (>{max_age/60:.0f} min), skipping...")
                             continue
                     except Exception as e:
                         print(f"   ⚠️ Could not parse email date: {e}")
-                        # Continue anyway
+                        # Continue anyway for Mawaqit emails
+                        if not is_mawaqit:
+                            continue
                     
                     # Extract email body
                     body = ""
@@ -303,21 +307,68 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             page.fill('input[type="email"]', mawaqit_email)
             page.fill('input[type="password"]', mawaqit_password)
             
-            # Submit login
-            page.click('button[type="submit"]')
-            print("🔑 Login submitted, waiting for response...")
+            # Handle reCAPTCHA if present
+            print("🤖 Checking for reCAPTCHA...")
+            if page.locator('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"]').count() > 0:
+                print("🛡️ reCAPTCHA detected - waiting for manual completion or bypass...")
+                
+                # Wait longer for reCAPTCHA to be solved or auto-bypass
+                page.wait_for_timeout(10000)  # 10 seconds
+                
+                # Try to detect if reCAPTCHA is solved
+                recaptcha_solved = False
+                for i in range(30):  # Wait up to 30 seconds
+                    try:
+                        # Check if submit button is enabled or reCAPTCHA is completed
+                        submit_button = page.locator('button[type="submit"]')
+                        if submit_button.is_enabled():
+                            recaptcha_solved = True
+                            break
+                        page.wait_for_timeout(1000)
+                    except:
+                        continue
+                
+                if not recaptcha_solved:
+                    print("⚠️ reCAPTCHA may still be active, but proceeding...")
             
-            # Wait for page to load
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(3000)  # Give it extra time
+            # Submit login
+            print("🔑 Submitting login...")
+            page.click('button[type="submit"]')
+            print("⏳ Waiting for login response...")
+            
+            # Wait longer for login to complete
+            page.wait_for_load_state("networkidle", timeout=30000)
+            page.wait_for_timeout(5000)  # Extra wait time
             
             # Check if 2FA is required
             page_content = page.content().lower()
+            print("🔍 Checking if 2FA is required...")
+            
             if "verification" in page_content or "code" in page_content or "authenticate" in page_content:
-                print("📧 2FA required, fetching code from Gmail...")
+                print("📧 2FA required, triggering fresh 2FA email...")
                 
-                # Get 2FA code from email
-                verification_code = get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password)
+                # First, try to trigger a new 2FA email by clicking "Resend" or similar
+                resend_selectors = [
+                    'button:has-text("Resend")',
+                    'a:has-text("Resend")', 
+                    'button:has-text("Send new code")',
+                    '.resend-code',
+                    '[data-action="resend"]'
+                ]
+                
+                for resend_selector in resend_selectors:
+                    if page.locator(resend_selector).count() > 0:
+                        try:
+                            page.click(resend_selector)
+                            print("✅ Clicked resend code button")
+                            page.wait_for_timeout(2000)
+                            break
+                        except Exception as e:
+                            print(f"⚠️ Failed to click resend: {e}")
+                            continue
+                
+                # Get 2FA code from email with longer timeout
+                verification_code = get_latest_mawaqit_2fa_code(gmail_user, gmail_app_password, max_wait=300)
                 
                 if not verification_code:
                     print("❌ Failed to get 2FA code")

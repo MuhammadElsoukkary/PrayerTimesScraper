@@ -1,106 +1,47 @@
-import time
-import requests
 from playwright.sync_api import sync_playwright
+import os
 
-# ------------------------------
-# NoCaptcha AI Solver Function
-# ------------------------------
-def solve_recaptcha_with_nocaptchaai(page, site_key, api_key="alsalaam465-80e91086-9f21-c204-2d46-c8e4a8a5ef3f", target_url=None):
-    if not target_url:
-        target_url = page.url
+# Credentials from environment variables
+MAWAQIT_USER = os.getenv("MAWAQIT_USER", "YOUR_EMAIL_HERE")
+MAWAQIT_PASSWORD = os.getenv("MAWAQIT_PASSWORD", "YOUR_PASSWORD_HERE")
+FILE_TO_UPLOAD = os.getenv("PRAYER_TIMES_FILE", "prayer_times.csv")
 
-    print("🤖 Sending reCAPTCHA to NoCaptcha AI for solving...")
-    
-    create_task_payload = {
-        "clientKey": api_key,
-        "task": {
-            "type": "NoCaptchaTaskProxyless",
-            "websiteURL": target_url,
-            "websiteKey": site_key
-        }
-    }
-
-    try:
-        task_response = requests.post("https://api.nocaptchaai.com/solve", json=create_task_payload).json()
-        if "taskId" not in task_response:
-            print(f"❌ Failed to create CAPTCHA task: {task_response}")
-            return False
-        
-        task_id = task_response["taskId"]
-        print(f"✅ CAPTCHA task created with ID: {task_id}")
-        
-        # Polling for result
-        for attempt in range(1, 20):
-            time.sleep(5)
-            result_response = requests.post("https://api.nocaptchaai.com/getTaskResult", json={"clientKey": api_key, "taskId": task_id}).json()
-            if result_response.get("status") == "ready":
-                g_recaptcha_response = result_response["solution"]["gRecaptchaResponse"]
-                print("✅ CAPTCHA solved successfully!")
-                
-                # Inject token into page
-                page.evaluate(f'document.getElementById("g-recaptcha-response").innerHTML="{g_recaptcha_response}";')
-                return True
-            else:
-                print(f"⏳ Waiting for CAPTCHA solution... (attempt {attempt})")
-        
-        print("❌ CAPTCHA solving timed out")
-        return False
-
-    except Exception as e:
-        print(f"❌ Error solving CAPTCHA via NoCaptcha AI: {e}")
-        return False
-
-# ------------------------------
-# Main Automation
-# ------------------------------
 def upload_to_mawaqit():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context()
+        page = context.new_page()
 
-        # Navigate to Mawaqit login page
-        page.goto("https://mawaqit.com/login")
+        # Go to login page
+        page.goto("https://mawaqit.net/en/backoffice/login")
 
-        # Fill in login info
-        page.fill('input[name="email"]', "YOUR_EMAIL_HERE")
-        page.fill('input[name="password"]', "YOUR_PASSWORD_HERE")
+        # Wait for login form
+        page.wait_for_selector('input[name="email"]', timeout=60000)
 
-        # Solve CAPTCHA if detected
-        if page.locator('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"]').count() > 0:
-            print("🛡️ reCAPTCHA detected - attempting to solve via NoCaptcha AI...")
-            
-            site_key_elem = page.locator('[data-sitekey]').first
-            if site_key_elem.count() > 0:
-                site_key = site_key_elem.get_attribute('data-sitekey')
-                recaptcha_solved = solve_recaptcha_with_nocaptchaai(page, site_key)
-            else:
-                print("❌ Could not find reCAPTCHA site key on page")
-                recaptcha_solved = False
-            
-            if not recaptcha_solved:
-                print("❌ CAPTCHA solving failed. Aborting.")
-                browser.close()
-                return
-        
-        # Submit login form
+        # Fill login credentials
+        page.fill('input[name="email"]', MAWAQIT_USER)
+        page.fill('input[name="password"]', MAWAQIT_PASSWORD)
         page.click('button[type="submit"]')
-        print("✅ Login submitted!")
 
-        # Wait for login to complete
-        page.wait_for_url("https://mawaqit.com/dashboard", timeout=15000)
+        # Wait for dashboard to load
+        page.wait_for_url("**/backoffice/dashboard", timeout=60000)
+        print("Login successful!")
 
-        # Navigate to upload page and perform upload
-        page.goto("https://mawaqit.com/upload")
-        page.set_input_files('input[type="file"]', "YOUR_FILE_PATH_HERE")
+        # Navigate to upload page
+        page.goto("https://mawaqit.net/en/backoffice/prayer-times")
+        page.wait_for_selector('input[type="file"]', timeout=60000)
+
+        # Upload the prayer times file
+        page.set_input_files('input[type="file"]', FILE_TO_UPLOAD)
+
+        # Click upload button
         page.click('button[type="submit"]')
-        print("✅ File upload submitted!")
 
-        # Finish
-        time.sleep(5)
+        # Wait for success message
+        page.wait_for_selector("text=Upload successful", timeout=60000)
+        print("Prayer times upload completed!")
+
         browser.close()
 
-# ------------------------------
-# Run the script
-# ------------------------------
 if __name__ == "__main__":
     upload_to_mawaqit()

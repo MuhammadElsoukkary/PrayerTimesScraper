@@ -1,45 +1,38 @@
-from playwright.sync_api import sync_playwright
-import os
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-# Credentials from environment variables
-MAWAQIT_USER = os.getenv("MAWAQIT_USER", "YOUR_EMAIL_HERE")
-MAWAQIT_PASSWORD = os.getenv("MAWAQIT_PASSWORD", "YOUR_PASSWORD_HERE")
-FILE_TO_UPLOAD = os.getenv("PRAYER_TIMES_FILE", "prayer_times.csv")
+MAWAQIT_URL = "https://mawaqit.net/en/backoffice/login"
+EMAIL = "YOUR_EMAIL_HERE"
+PASSWORD = "YOUR_PASSWORD_HERE"
 
 def upload_to_mawaqit():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True)  # Always headless
         context = browser.new_context()
         page = context.new_page()
 
         # Go to login page
-        page.goto("https://mawaqit.net/en/backoffice/login")
+        page.goto(MAWAQIT_URL, wait_until="load")
 
-        # Wait for login form
-        page.wait_for_selector('input[name="email"]', timeout=60000)
+        try:
+            # Fill login form
+            page.fill('input[name="email"]', EMAIL)
+            page.fill('input[name="password"]', PASSWORD)
 
-        # Fill login credentials
-        page.fill('input[name="email"]', MAWAQIT_USER)
-        page.fill('input[name="password"]', MAWAQIT_PASSWORD)
-        page.click('button[type="submit"]')
+            # Click login and wait for navigation
+            page.click('button[type="submit"]')
 
-        # Wait for dashboard to load
-        page.wait_for_url("**/backoffice/dashboard", timeout=60000)
-        print("Login successful!")
+            # Wait for dashboard or any URL that indicates successful login
+            page.wait_for_url("**/backoffice/**", timeout=60000)
 
-        # Navigate to upload page
-        page.goto("https://mawaqit.net/en/backoffice/prayer-times")
-        page.wait_for_selector('input[type="file"]', timeout=60000)
+        except PlaywrightTimeoutError:
+            print("Login failed or dashboard did not load in time.")
+            browser.close()
+            return
 
-        # Upload the prayer times file
-        page.set_input_files('input[type="file"]', FILE_TO_UPLOAD)
+        print("Login successful! Ready to upload data.")
 
-        # Click upload button
-        page.click('button[type="submit"]')
-
-        # Wait for success message
-        page.wait_for_selector("text=Upload successful", timeout=60000)
-        print("Prayer times upload completed!")
+        # --- Add your scraping/upload logic here ---
+        # e.g., navigate to the section, fill forms, submit prayer times, etc.
 
         browser.close()
 

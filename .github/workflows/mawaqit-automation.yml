@@ -1,4 +1,5 @@
 name: Update Mawaqit Prayer Times
+
 on:
   schedule:
     # Run every Sunday at 6 AM UTC (adjust timezone as needed)
@@ -20,7 +21,8 @@ jobs:
         
     - name: Install Python dependencies for uploader
       run: |
-        pip install playwright imaplib2
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
         playwright install chromium
       
     - name: Run Prayer Times Scraper
@@ -43,6 +45,7 @@ jobs:
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         PRAYER_TIMES_DIR: ./prayer_times
+        NO_CAPTCHA_API_KEY: ${{ secrets.NO_CAPTCHA_API_KEY }} # Add your NoCaptcha AI key as a secret
       run: |
         python mawaqit_uploader.py
         

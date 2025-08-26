@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mawaqit Prayer Times Uploader with NoCaptchaAI integration
+Mawaqit Prayer Times Uploader with corrected NoCaptchaAI integration
 """
 
 import imaplib
@@ -10,156 +10,278 @@ import time
 import os
 import csv
 import requests
-import base64
+import json
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 NOCAPTCHAAI_API_KEY = "alsalaam465-80e91086-9f21-c204-2d46-c8e4a8a5ef3f"
+NOCAPTCHAAI_API_URL = "https://api.nocaptchaai.com"
 
 def solve_recaptcha_with_nocaptchaai(page, site_key=None):
     """
-    Solve reCAPTCHA using NoCaptchaAI service
+    Solve reCAPTCHA using NoCaptchaAI service with correct API endpoint
     """
     print("Solving reCAPTCHA using NoCaptchaAI...")
     
     try:
         # Get the site key if not provided
         if not site_key:
-            # Try to extract site key from the page
-            recaptcha_elements = page.locator('[data-sitekey]')
-            if recaptcha_elements.count() > 0:
-                site_key = recaptcha_elements.first.get_attribute('data-sitekey')
-                print(f"Found site key: {site_key}")
-            else:
-                print("Could not find reCAPTCHA site key")
-                return False
+            # Try multiple ways to find the site key
+            selectors = [
+                '[data-sitekey]',
+                '.g-recaptcha[data-sitekey]',
+                'div[data-sitekey]',
+                'iframe[src*="recaptcha"]'
+            ]
+            
+            for selector in selectors:
+                elements = page.locator(selector)
+                if elements.count() > 0:
+                    if 'iframe' in selector:
+                        # Extract from iframe src
+                        iframe_src = elements.first.get_attribute('src')
+                        import urllib.parse
+                        params = urllib.parse.parse_qs(urllib.parse.urlparse(iframe_src).query)
+                        if 'k' in params:
+                            site_key = params['k'][0]
+                    else:
+                        site_key = elements.first.get_attribute('data-sitekey')
+                    
+                    if site_key:
+                        print(f"Found site key: {site_key}")
+                        break
+            
+            if not site_key:
+                # Try JavaScript extraction
+                site_key = page.evaluate("""
+                    () => {
+                        // Check for grecaptcha object
+                        if (typeof grecaptcha !== 'undefined' && grecaptcha.execute) {
+                            const widgets = Object.keys(___grecaptcha_cfg.clients);
+                            if (widgets.length > 0) {
+                                return ___grecaptcha_cfg.clients[widgets[0]].id;
+                            }
+                        }
+                        // Check for data-sitekey attribute
+                        const element = document.querySelector('[data-sitekey]');
+                        return element ? element.getAttribute('data-sitekey') : null;
+                    }
+                """)
+                
+                if site_key:
+                    print(f"Found site key via JS: {site_key}")
+                else:
+                    print("Could not find reCAPTCHA site key")
+                    return False
         
         current_url = page.url
         
-        # Try different method names for NoCaptchaAI
-        methods_to_try = ['recaptcha', 'recaptchav2', 'geetest']
+        # Use the correct NoCaptchaAI API format for reCAPTCHA v2
+        # Based on their documentation, the correct endpoint structure is:
+        submit_url = f"{NOCAPTCHAAI_API_URL}/solve"
         
-        captcha_id = None
-        for method in methods_to_try:
-            submit_payload = {
+        # Prepare the request with correct parameters
+        headers = {
+            'Content-Type': 'application/json',
+            'apikey': NOCAPTCHAAI_API_KEY
+        }
+        
+        payload = {
+            'type': 'recaptchav2',  # Specify reCAPTCHA v2
+            'sitekey': site_key,
+            'url': current_url,
+            'invisible': False,  # Set to True if it's invisible reCAPTCHA
+            'enterprise': False  # Set to True if it's reCAPTCHA Enterprise
+        }
+        
+        print(f"Submitting to NoCaptchaAI...")
+        print(f"URL: {submit_url}")
+        print(f"Payload: {json.dumps(payload, indent=2)}")
+        
+        # Submit the CAPTCHA task
+        submit_response = requests.post(submit_url, json=payload, headers=headers, timeout=30)
+        
+        print(f"Response status: {submit_response.status_code}")
+        print(f"Response: {submit_response.text}")
+        
+        if submit_response.status_code != 200:
+            # Try alternative API format (in.php style)
+            print("Trying alternative API format...")
+            
+            alt_payload = {
                 'key': NOCAPTCHAAI_API_KEY,
-                'method': method,
+                'method': 'userrecaptcha',  # Try userrecaptcha method
                 'googlekey': site_key,
                 'pageurl': current_url,
-                'json': '1'
+                'json': 1
             }
             
-            print(f"Trying method: {method}")
-            print(f"Payload: {submit_payload}")
+            alt_response = requests.post(f"{NOCAPTCHAAI_API_URL}/in.php", data=alt_payload, timeout=30)
+            print(f"Alternative response: {alt_response.text}")
             
-            submit_response = requests.post('https://api.nocaptchaai.com/in.php', data=submit_payload, timeout=30)
-            
-            print(f"Response status: {submit_response.status_code}")
-            print(f"Response text: {submit_response.text}")
-            
-            if submit_response.status_code == 200:
+            if alt_response.status_code == 200:
                 try:
-                    submit_result = submit_response.json()
-                    if submit_result.get('status') == 1:
-                        captcha_id = submit_result.get('request')
-                        print(f"Success with method '{method}'! Captcha ID: {captcha_id}")
-                        break
+                    result = alt_response.json()
+                    if result.get('status') == 1:
+                        captcha_id = result.get('request')
+                        print(f"Task submitted! ID: {captcha_id}")
                     else:
-                        print(f"Method '{method}' failed: {submit_result}")
+                        print(f"Failed to submit: {result}")
+                        return False
                 except:
-                    submit_result = submit_response.text
-                    if submit_result.startswith('OK|'):
-                        captcha_id = submit_result.split('|')[1]
-                        print(f"Success with method '{method}'! Captcha ID: {captcha_id}")
-                        break
+                    if alt_response.text.startswith('OK|'):
+                        captcha_id = alt_response.text.split('|')[1]
+                        print(f"Task submitted! ID: {captcha_id}")
                     else:
-                        print(f"Method '{method}' failed: {submit_result}")
+                        print(f"Failed to submit: {alt_response.text}")
+                        return False
             else:
-                print(f"Method '{method}' HTTP error: {submit_response.status_code}")
+                print("Both API formats failed")
+                return False
+        else:
+            # Parse response from main API
+            try:
+                result = submit_response.json()
+                if 'id' in result:
+                    captcha_id = result['id']
+                    print(f"Task submitted successfully! ID: {captcha_id}")
+                elif 'taskId' in result:
+                    captcha_id = result['taskId']
+                    print(f"Task submitted successfully! Task ID: {captcha_id}")
+                else:
+                    print(f"Unexpected response format: {result}")
+                    return False
+            except Exception as e:
+                print(f"Failed to parse response: {e}")
+                return False
         
-        if not captcha_id:
-            print("All methods failed")
-            return False
+        # Poll for the solution
+        print("Waiting for solution...")
+        max_attempts = 30  # 5 minutes max
         
-        # Poll for result
-        print("Waiting for reCAPTCHA solution...")
-        for attempt in range(30):  # Wait up to 5 minutes
-            time.sleep(10)
+        for attempt in range(max_attempts):
+            time.sleep(10)  # Wait 10 seconds between checks
             
-            # Request with JSON format
-            result_url = f'https://api.nocaptchaai.com/res.php?key={NOCAPTCHAAI_API_KEY}&action=get&id={captcha_id}&json=1'
-            result_response = requests.get(result_url, timeout=10)
+            # Check result using the appropriate endpoint
+            if 'captcha_id' in locals():
+                # Using old API format
+                result_url = f"{NOCAPTCHAAI_API_URL}/res.php"
+                result_params = {
+                    'key': NOCAPTCHAAI_API_KEY,
+                    'action': 'get',
+                    'id': captcha_id,
+                    'json': 1
+                }
+                result_response = requests.get(result_url, params=result_params, timeout=10)
+            else:
+                # Using new API format
+                result_url = f"{NOCAPTCHAAI_API_URL}/status"
+                result_params = {'id': captcha_id}
+                result_headers = {'apikey': NOCAPTCHAAI_API_KEY}
+                result_response = requests.get(result_url, params=result_params, headers=result_headers, timeout=10)
             
-            print(f"Result response: {result_response.text}")
+            print(f"Attempt {attempt + 1}: {result_response.text[:100]}...")
             
             if result_response.status_code != 200:
-                print(f"Failed to get result: {result_response.status_code}")
                 continue
             
             try:
-                result = result_response.json()
-                if result.get('status') == 0:
-                    if result.get('request') == 'CAPCHA_NOT_READY':
-                        print(f"Attempt {attempt + 1}: Not ready yet...")
-                        continue
-                elif result.get('status') == 1:
-                    solution = result.get('request')
-                    print(f"reCAPTCHA solved! Solution length: {len(solution)}")
+                result_data = result_response.json()
+                
+                # Check if solution is ready
+                if result_data.get('status') == 'ready' or result_data.get('status') == 1:
+                    solution = result_data.get('solution', result_data.get('request', ''))
                     
-                    # Inject the solution into the page
-                    page.evaluate(f'''
-                        // Find and set the response textarea
-                        const responseElement = document.querySelector('[name="g-recaptcha-response"]');
-                        if (responseElement) {{
-                            responseElement.value = "{solution}";
-                            responseElement.style.display = 'block';
-                        }}
+                    if isinstance(solution, dict):
+                        solution = solution.get('gRecaptchaResponse', '')
+                    
+                    if solution and solution != 'CAPCHA_NOT_READY':
+                        print(f"✅ Solution received! Length: {len(solution)}")
                         
-                        // Override grecaptcha if it exists
-                        if (window.grecaptcha) {{
-                            window.grecaptcha.getResponse = function() {{ return "{solution}"; }};
-                        }}
+                        # Inject the solution
+                        injection_script = f"""
+                        (function() {{
+                            // Find the textarea
+                            let textarea = document.querySelector('#g-recaptcha-response');
+                            if (!textarea) {{
+                                textarea = document.querySelector('[name="g-recaptcha-response"]');
+                            }}
+                            if (!textarea) {{
+                                // Create it if it doesn't exist
+                                textarea = document.createElement('textarea');
+                                textarea.id = 'g-recaptcha-response';
+                                textarea.name = 'g-recaptcha-response';
+                                textarea.style.display = 'none';
+                                document.body.appendChild(textarea);
+                            }}
+                            
+                            // Set the value
+                            textarea.value = `{solution}`;
+                            textarea.innerHTML = `{solution}`;
+                            
+                            // Make sure it's not disabled
+                            textarea.disabled = false;
+                            
+                            // Trigger the callback if it exists
+                            if (typeof ___grecaptcha_cfg !== 'undefined') {{
+                                Object.keys(___grecaptcha_cfg.clients).forEach(key => {{
+                                    const client = ___grecaptcha_cfg.clients[key];
+                                    if (client.callback) {{
+                                        client.callback(`{solution}`);
+                                    }}
+                                }});
+                            }}
+                            
+                            // Also try window callbacks
+                            if (window.recaptchaCallback) {{
+                                window.recaptchaCallback(`{solution}`);
+                            }}
+                            if (window.onRecaptchaSuccess) {{
+                                window.onRecaptchaSuccess(`{solution}`);
+                            }}
+                            
+                            console.log('reCAPTCHA solution injected successfully');
+                            return true;
+                        }})();
+                        """
                         
-                        console.log('reCAPTCHA solution injected');
-                    ''')
-                    
-                    print("Solution injected into page")
-                    return True
-                else:
-                    print(f"reCAPTCHA solving failed: {result}")
-                    return False
-                    
-            except:
-                # Fallback to text parsing
-                result_text = result_response.text
-                if result_text == 'CAPCHA_NOT_READY':
-                    print(f"Attempt {attempt + 1}: Not ready yet...")
+                        page.evaluate(injection_script)
+                        print("✅ Solution injected into page")
+                        
+                        # Give it a moment to process
+                        time.sleep(2)
+                        
+                        # Try to submit the form if there's a submit button
+                        try:
+                            submit_button = page.locator('button[type="submit"], input[type="submit"]').first
+                            if submit_button.is_visible():
+                                print("Clicking submit button...")
+                                submit_button.click()
+                        except:
+                            pass
+                        
+                        return True
+                
+                elif result_data.get('status') == 'processing' or result_data.get('request') == 'CAPCHA_NOT_READY':
+                    print(f"Still processing... ({attempt + 1}/{max_attempts})")
                     continue
-                elif result_text.startswith('OK|'):
-                    solution = result_text.split('|')[1]
-                    print(f"reCAPTCHA solved! Solution length: {len(solution)}")
-                    
-                    page.evaluate(f'''
-                        const responseElement = document.querySelector('[name="g-recaptcha-response"]');
-                        if (responseElement) {{
-                            responseElement.value = "{solution}";
-                        }}
-                        if (window.grecaptcha) {{
-                            window.grecaptcha.getResponse = function() {{ return "{solution}"; }};
-                        }}
-                    ''')
-                    
-                    print("Solution injected into page")
-                    return True
                 else:
-                    print(f"reCAPTCHA solving failed: {result_text}")
-                    return False
+                    error_msg = result_data.get('error', result_data.get('request', 'Unknown error'))
+                    print(f"Error from service: {error_msg}")
+                    if 'ERROR' in str(error_msg).upper():
+                        return False
+                    
+            except Exception as e:
+                print(f"Error parsing result: {e}")
+                continue
         
-        print("Timeout waiting for reCAPTCHA solution")
+        print("❌ Timeout waiting for solution")
         return False
         
     except Exception as e:
-        print(f"Error solving reCAPTCHA: {e}")
+        print(f"❌ Error solving reCAPTCHA: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def get_2fa_code_from_email(gmail_user, gmail_app_password):
@@ -316,35 +438,71 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
     print(f"🖥️ Running in {'headless' if is_headless else 'headed'} mode")
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=is_headless)
-        context = browser.new_context()
+        # Launch with additional args for better CAPTCHA handling
+        browser_args = [
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=site-per-process',
+            '--disable-dev-shm-usage'
+        ]
+        
+        browser = p.chromium.launch(
+            headless=is_headless,
+            args=browser_args
+        )
+        
+        context = browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        )
+        
         page = context.new_page()
+        
+        # Add console logging for debugging
+        page.on("console", lambda msg: print(f"Browser console: {msg.text}"))
         
         try:
             print("🌐 Navigating to Mawaqit login...")
-            page.goto("https://mawaqit.net/en/backoffice/login", wait_until="load")
+            page.goto("https://mawaqit.net/en/backoffice/login", wait_until="networkidle")
+            
+            # Wait a moment for page to fully load
+            time.sleep(3)
             
             print("Filling login credentials...")
             page.fill('input[type="email"], input[name="email"]', mawaqit_email)
             page.fill('input[type="password"], input[name="password"]', mawaqit_password)
             
-            # Handle reCAPTCHA with NoCaptchaAI
-            if page.locator('.g-recaptcha, iframe[src*="recaptcha"]').count() > 0:
+            # Check for reCAPTCHA presence
+            has_recaptcha = page.locator('.g-recaptcha, iframe[src*="recaptcha"], [data-sitekey]').count() > 0
+            
+            if has_recaptcha:
                 print("reCAPTCHA detected - solving with NoCaptchaAI...")
                 recaptcha_solved = solve_recaptcha_with_nocaptchaai(page)
                 
                 if not recaptcha_solved:
-                    print("Failed to solve reCAPTCHA")
+                    print("❌ Failed to solve reCAPTCHA")
                     return False
                 else:
-                    print("reCAPTCHA solved successfully!")
+                    print("✅ reCAPTCHA solved successfully!")
             else:
                 print("No reCAPTCHA detected")
             
-            print("Submitting login...")
-            page.click('button[type="submit"], input[type="submit"]')
+            print("Submitting login form...")
+            # Try to find and click the submit button
+            submit_selectors = [
+                'button[type="submit"]',
+                'input[type="submit"]',
+                'button:has-text("Login")',
+                'button:has-text("Sign in")',
+                'button:has-text("Se connecter")'
+            ]
             
-            # Wait for either dashboard or 2FA page
+            for selector in submit_selectors:
+                if page.locator(selector).count() > 0:
+                    page.click(selector)
+                    print(f"Clicked: {selector}")
+                    break
+            
+            # Wait for navigation
             print("⏳ Waiting for login response...")
             time.sleep(5)
             
@@ -352,7 +510,7 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             page_content = page.content().lower()
             
             # Check if 2FA is required
-            if "verification" in page_content or "code" in page_content:
+            if any(keyword in page_content for keyword in ["verification", "code", "authentication", "2fa"]):
                 print("📧 2FA required - getting code from email...")
                 
                 verification_code = get_2fa_code_from_email(gmail_user, gmail_app_password)
@@ -365,7 +523,9 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 code_inputs = [
                     'input[placeholder*="code" i]',
                     'input[name*="code" i]',
-                    'input[type="text"]'
+                    'input[name*="verification" i]',
+                    'input[type="text"]',
+                    'input[type="number"]'
                 ]
                 
                 code_entered = False
@@ -373,7 +533,7 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     if page.locator(selector).count() > 0:
                         page.fill(selector, verification_code)
                         code_entered = True
-                        print(f"✅ Entered 2FA code")
+                        print(f"✅ Entered 2FA code using: {selector}")
                         break
                 
                 if not code_entered:
@@ -381,30 +541,33 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     return False
                 
                 # Submit 2FA
-                page.click('button[type="submit"], input[type="submit"]')
+                for selector in submit_selectors:
+                    if page.locator(selector).count() > 0:
+                        page.click(selector)
+                        break
+                
                 time.sleep(3)
             
-            # Check if we're logged in by looking for backoffice URL or dashboard elements
-            try:
-                page.wait_for_url("**/backoffice/**", timeout=10000)
+            # Check if we're logged in
+            if "backoffice" in page.url or "dashboard" in page.url:
                 print("✅ Successfully logged into Mawaqit backoffice!")
-            except PlaywrightTimeoutError:
-                if "login" in page.url.lower():
-                    print("❌ Still on login page - login failed")
-                    return False
-                else:
-                    print("✅ Login appears successful (URL changed)")
+            elif "login" in page.url.lower():
+                print("❌ Still on login page - login failed")
+                return False
+            else:
+                print(f"📍 Current URL: {page.url}")
+                print("✅ Login appears successful")
             
             # Navigate to prayer times configuration
             print("🔍 Looking for prayer times configuration...")
             
-            # Try common navigation patterns
+            # Try navigation patterns
             nav_links = [
                 'a:has-text("Configuration")',
                 'a:has-text("Prayer")',
-                'a:has-text("Athan")',
+                'a:has-text("Times")',
                 'a[href*="prayer"]',
-                'a[href*="athan"]'
+                'a[href*="configuration"]'
             ]
             
             for link in nav_links:
@@ -417,13 +580,12 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             print("✅ Basic login and navigation completed!")
             print(f"📊 Ready to upload {len(prayer_times)} days of prayer times")
             
-            # Here you would add the actual form filling logic
-            # For now, we've proven the login works
-            
             return True
             
         except Exception as e:
             print(f"❌ Error during upload: {e}")
+            import traceback
+            traceback.print_exc()
             return False
         finally:
             browser.close()

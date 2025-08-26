@@ -76,84 +76,120 @@ def solve_recaptcha_with_nocaptchaai(page, site_key=None):
         
         current_url = page.url
         
-        # Use the correct NoCaptchaAI API format for reCAPTCHA v2
-        # Based on their documentation, the correct endpoint structure is:
+        # Try multiple API formats for NoCaptchaAI
+        captcha_id = None
+        
+        # Method 1: JSON API with 'method' field
         submit_url = f"{NOCAPTCHAAI_API_URL}/solve"
         
-        # Prepare the request with correct parameters
         headers = {
             'Content-Type': 'application/json',
             'apikey': NOCAPTCHAAI_API_KEY
         }
         
+        # Try with 'method' instead of 'type'
         payload = {
-            'type': 'recaptchav2',  # Specify reCAPTCHA v2
+            'method': 'recaptchav2',  # Use method instead of type
             'sitekey': site_key,
             'url': current_url,
-            'invisible': False,  # Set to True if it's invisible reCAPTCHA
-            'enterprise': False  # Set to True if it's reCAPTCHA Enterprise
+            'invisible': False,
+            'enterprise': False
         }
         
-        print(f"Submitting to NoCaptchaAI...")
+        print(f"Trying JSON API with method field...")
         print(f"URL: {submit_url}")
         print(f"Payload: {json.dumps(payload, indent=2)}")
         
-        # Submit the CAPTCHA task
         submit_response = requests.post(submit_url, json=payload, headers=headers, timeout=30)
-        
         print(f"Response status: {submit_response.status_code}")
         print(f"Response: {submit_response.text}")
         
-        if submit_response.status_code != 200:
-            # Try alternative API format (in.php style)
-            print("Trying alternative API format...")
-            
-            alt_payload = {
-                'key': NOCAPTCHAAI_API_KEY,
-                'method': 'userrecaptcha',  # Try userrecaptcha method
-                'googlekey': site_key,
-                'pageurl': current_url,
-                'json': 1
-            }
-            
-            alt_response = requests.post(f"{NOCAPTCHAAI_API_URL}/in.php", data=alt_payload, timeout=30)
-            print(f"Alternative response: {alt_response.text}")
-            
-            if alt_response.status_code == 200:
-                try:
-                    result = alt_response.json()
-                    if result.get('status') == 1:
-                        captcha_id = result.get('request')
-                        print(f"Task submitted! ID: {captcha_id}")
-                    else:
-                        print(f"Failed to submit: {result}")
-                        return False
-                except:
-                    if alt_response.text.startswith('OK|'):
-                        captcha_id = alt_response.text.split('|')[1]
-                        print(f"Task submitted! ID: {captcha_id}")
-                    else:
-                        print(f"Failed to submit: {alt_response.text}")
-                        return False
-            else:
-                print("Both API formats failed")
-                return False
-        else:
-            # Parse response from main API
+        if submit_response.status_code == 200:
             try:
                 result = submit_response.json()
                 if 'id' in result:
                     captcha_id = result['id']
-                    print(f"Task submitted successfully! ID: {captcha_id}")
+                    print(f"✅ Task submitted! ID: {captcha_id}")
                 elif 'taskId' in result:
                     captcha_id = result['taskId']
-                    print(f"Task submitted successfully! Task ID: {captcha_id}")
-                else:
-                    print(f"Unexpected response format: {result}")
-                    return False
-            except Exception as e:
-                print(f"Failed to parse response: {e}")
-                return False
+                    print(f"✅ Task submitted! Task ID: {captcha_id}")
+            except:
+                pass
+        
+        # Method 2: Try with API key in JSON payload
+        if not captcha_id:
+            print("\nTrying with API key in payload...")
+            payload['apikey'] = NOCAPTCHAAI_API_KEY
+            submit_response = requests.post(submit_url, json=payload, timeout=30)
+            print(f"Response: {submit_response.text}")
+            
+            if submit_response.status_code == 200:
+                try:
+                    result = submit_response.json()
+                    if 'id' in result or 'taskId' in result:
+                        captcha_id = result.get('id', result.get('taskId'))
+                        print(f"✅ Task submitted! ID: {captcha_id}")
+                except:
+                    pass
+        
+        # Method 3: Try hcaptcha method (some services use this for recaptcha too)
+        if not captcha_id:
+            print("\nTrying hcaptcha method...")
+            payload['method'] = 'hcaptcha'
+            payload['sitekey'] = site_key
+            submit_response = requests.post(submit_url, json=payload, headers=headers, timeout=30)
+            print(f"Response: {submit_response.text}")
+            
+            if submit_response.status_code == 200:
+                try:
+                    result = submit_response.json()
+                    if 'id' in result or 'taskId' in result:
+                        captcha_id = result.get('id', result.get('taskId'))
+                        print(f"✅ Task submitted with hcaptcha! ID: {captcha_id}")
+                except:
+                    pass
+        
+        # Method 4: Legacy in.php format
+        if not captcha_id:
+            print("\nTrying legacy in.php format...")
+            
+            # Try different method names
+            methods_to_try = ['recaptchav2', 'recaptcha', 'nocaptcha']
+            
+            for method_name in methods_to_try:
+                legacy_payload = {
+                    'key': NOCAPTCHAAI_API_KEY,
+                    'method': method_name,
+                    'googlekey': site_key,
+                    'pageurl': current_url,
+                    'json': 1
+                }
+                
+                print(f"Trying method: {method_name}")
+                legacy_response = requests.post(f"{NOCAPTCHAAI_API_URL}/in.php", data=legacy_payload, timeout=30)
+                print(f"Response: {legacy_response.text}")
+                
+                if legacy_response.status_code == 200:
+                    try:
+                        result = legacy_response.json()
+                        if result.get('status') == 1:
+                            captcha_id = result.get('request')
+                            print(f"✅ Success with method '{method_name}'! ID: {captcha_id}")
+                            break
+                    except:
+                        if legacy_response.text.startswith('OK|'):
+                            captcha_id = legacy_response.text.split('|')[1]
+                            print(f"✅ Success with method '{method_name}'! ID: {captcha_id}")
+                            break
+        
+        if not captcha_id:
+            print("\n❌ All API methods failed")
+            print("\n📝 Possible solutions:")
+            print("1. Contact NoCaptchaAI support to check which method your API key supports")
+            print("2. Your API key might need to be activated for reCAPTCHA v2")
+            print("3. Consider using 2captcha.com or anti-captcha.com as alternatives")
+            return False
+
         
         # Poll for the solution
         print("Waiting for solution...")

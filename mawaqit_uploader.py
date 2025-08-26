@@ -36,64 +36,119 @@ def solve_recaptcha_with_nocaptchaai(page, site_key=None):
         
         current_url = page.url
         
-        # Submit reCAPTCHA to NoCaptchaAI
+        # Submit reCAPTCHA to NoCaptchaAI - correct format
         submit_payload = {
             'key': NOCAPTCHAAI_API_KEY,
             'method': 'userrecaptcha',
             'googlekey': site_key,
-            'pageurl': current_url
+            'pageurl': current_url,
+            'json': '1'  # Request JSON response
         }
         
         print("Submitting reCAPTCHA to NoCaptchaAI...")
+        print(f"Payload: {submit_payload}")
+        
         submit_response = requests.post('https://api.nocaptchaai.com/in.php', data=submit_payload, timeout=30)
         
+        print(f"Response status: {submit_response.status_code}")
+        print(f"Response text: {submit_response.text}")
+        
         if submit_response.status_code != 200:
-            print(f"Failed to submit reCAPTCHA: {submit_response.status_code}")
+            print(f"Failed to submit reCAPTCHA: HTTP {submit_response.status_code}")
             return False
         
-        submit_result = submit_response.text
-        print(f"Submit response: {submit_result}")
-        
-        if not submit_result.startswith('OK|'):
-            print(f"reCAPTCHA submission failed: {submit_result}")
-            return False
-        
-        captcha_id = submit_result.split('|')[1]
-        print(f"reCAPTCHA submitted with ID: {captcha_id}")
+        # Try to parse JSON response first
+        try:
+            submit_result = submit_response.json()
+            if submit_result.get('status') == 1:
+                captcha_id = submit_result.get('request')
+                print(f"reCAPTCHA submitted with ID: {captcha_id}")
+            else:
+                print(f"reCAPTCHA submission failed: {submit_result}")
+                return False
+        except:
+            # Fallback to text parsing
+            submit_result = submit_response.text
+            if submit_result.startswith('OK|'):
+                captcha_id = submit_result.split('|')[1]
+                print(f"reCAPTCHA submitted with ID: {captcha_id}")
+            else:
+                print(f"reCAPTCHA submission failed: {submit_result}")
+                return False
         
         # Poll for result
         print("Waiting for reCAPTCHA solution...")
         for attempt in range(30):  # Wait up to 5 minutes
             time.sleep(10)
             
-            result_response = requests.get(f'https://api.nocaptchaai.com/res.php?key={NOCAPTCHAAI_API_KEY}&action=get&id={captcha_id}', timeout=10)
+            # Request with JSON format
+            result_url = f'https://api.nocaptchaai.com/res.php?key={NOCAPTCHAAI_API_KEY}&action=get&id={captcha_id}&json=1'
+            result_response = requests.get(result_url, timeout=10)
+            
+            print(f"Result response: {result_response.text}")
             
             if result_response.status_code != 200:
                 print(f"Failed to get result: {result_response.status_code}")
                 continue
             
-            result = result_response.text
-            print(f"Attempt {attempt + 1}: {result}")
-            
-            if result == 'CAPCHA_NOT_READY':
-                continue
-            elif result.startswith('OK|'):
-                solution = result.split('|')[1]
-                print(f"reCAPTCHA solved! Solution: {solution[:50]}...")
-                
-                # Inject the solution into the page
-                page.evaluate(f'''
-                    document.querySelector('[name="g-recaptcha-response"]').value = "{solution}";
-                    if (window.grecaptcha) {{
-                        window.grecaptcha.getResponse = function() {{ return "{solution}"; }};
-                    }}
-                ''')
-                
-                print("Solution injected into page")
-                return True
-            else:
-                print(f"reCAPTCHA solving failed: {result}")
-                return False
+            try:
+                result = result_response.json()
+                if result.get('status') == 0:
+                    if result.get('request') == 'CAPCHA_NOT_READY':
+                        print(f"Attempt {attempt + 1}: Not ready yet...")
+                        continue
+                elif result.get('status') == 1:
+                    solution = result.get('request')
+                    print(f"reCAPTCHA solved! Solution length: {len(solution)}")
+                    
+                    # Inject the solution into the page
+                    page.evaluate(f'''
+                        // Find and set the response textarea
+                        const responseElement = document.querySelector('[name="g-recaptcha-response"]');
+                        if (responseElement) {{
+                            responseElement.value = "{solution}";
+                            responseElement.style.display = 'block';
+                        }}
+                        
+                        // Override grecaptcha if it exists
+                        if (window.grecaptcha) {{
+                            window.grecaptcha.getResponse = function() {{ return "{solution}"; }};
+                        }}
+                        
+                        console.log('reCAPTCHA solution injected');
+                    ''')
+                    
+                    print("Solution injected into page")
+                    return True
+                else:
+                    print(f"reCAPTCHA solving failed: {result}")
+                    return False
+                    
+            except:
+                # Fallback to text parsing
+                result_text = result_response.text
+                if result_text == 'CAPCHA_NOT_READY':
+                    print(f"Attempt {attempt + 1}: Not ready yet...")
+                    continue
+                elif result_text.startswith('OK|'):
+                    solution = result_text.split('|')[1]
+                    print(f"reCAPTCHA solved! Solution length: {len(solution)}")
+                    
+                    page.evaluate(f'''
+                        const responseElement = document.querySelector('[name="g-recaptcha-response"]');
+                        if (responseElement) {{
+                            responseElement.value = "{solution}";
+                        }}
+                        if (window.grecaptcha) {{
+                            window.grecaptcha.getResponse = function() {{ return "{solution}"; }};
+                        }}
+                    ''')
+                    
+                    print("Solution injected into page")
+                    return True
+                else:
+                    print(f"reCAPTCHA solving failed: {result_text}")
+                    return False
         
         print("Timeout waiting for reCAPTCHA solution")
         return False

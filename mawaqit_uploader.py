@@ -36,45 +36,50 @@ def solve_recaptcha_with_nocaptchaai(page, site_key=None):
         
         current_url = page.url
         
-        # Submit reCAPTCHA to NoCaptchaAI - correct format
-        submit_payload = {
-            'key': NOCAPTCHAAI_API_KEY,
-            'method': 'userrecaptcha',
-            'googlekey': site_key,
-            'pageurl': current_url,
-            'json': '1'  # Request JSON response
-        }
+        # Try different method names for NoCaptchaAI
+        methods_to_try = ['recaptcha', 'recaptchav2', 'geetest']
         
-        print("Submitting reCAPTCHA to NoCaptchaAI...")
-        print(f"Payload: {submit_payload}")
+        captcha_id = None
+        for method in methods_to_try:
+            submit_payload = {
+                'key': NOCAPTCHAAI_API_KEY,
+                'method': method,
+                'googlekey': site_key,
+                'pageurl': current_url,
+                'json': '1'
+            }
+            
+            print(f"Trying method: {method}")
+            print(f"Payload: {submit_payload}")
+            
+            submit_response = requests.post('https://api.nocaptchaai.com/in.php', data=submit_payload, timeout=30)
+            
+            print(f"Response status: {submit_response.status_code}")
+            print(f"Response text: {submit_response.text}")
+            
+            if submit_response.status_code == 200:
+                try:
+                    submit_result = submit_response.json()
+                    if submit_result.get('status') == 1:
+                        captcha_id = submit_result.get('request')
+                        print(f"Success with method '{method}'! Captcha ID: {captcha_id}")
+                        break
+                    else:
+                        print(f"Method '{method}' failed: {submit_result}")
+                except:
+                    submit_result = submit_response.text
+                    if submit_result.startswith('OK|'):
+                        captcha_id = submit_result.split('|')[1]
+                        print(f"Success with method '{method}'! Captcha ID: {captcha_id}")
+                        break
+                    else:
+                        print(f"Method '{method}' failed: {submit_result}")
+            else:
+                print(f"Method '{method}' HTTP error: {submit_response.status_code}")
         
-        submit_response = requests.post('https://api.nocaptchaai.com/in.php', data=submit_payload, timeout=30)
-        
-        print(f"Response status: {submit_response.status_code}")
-        print(f"Response text: {submit_response.text}")
-        
-        if submit_response.status_code != 200:
-            print(f"Failed to submit reCAPTCHA: HTTP {submit_response.status_code}")
+        if not captcha_id:
+            print("All methods failed")
             return False
-        
-        # Try to parse JSON response first
-        try:
-            submit_result = submit_response.json()
-            if submit_result.get('status') == 1:
-                captcha_id = submit_result.get('request')
-                print(f"reCAPTCHA submitted with ID: {captcha_id}")
-            else:
-                print(f"reCAPTCHA submission failed: {submit_result}")
-                return False
-        except:
-            # Fallback to text parsing
-            submit_result = submit_response.text
-            if submit_result.startswith('OK|'):
-                captcha_id = submit_result.split('|')[1]
-                print(f"reCAPTCHA submitted with ID: {captcha_id}")
-            else:
-                print(f"reCAPTCHA submission failed: {submit_result}")
-                return False
         
         # Poll for result
         print("Waiting for reCAPTCHA solution...")

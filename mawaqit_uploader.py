@@ -385,72 +385,42 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             current_month = datetime.now().strftime('%B')
             print(f"Looking for {current_month} month...")
             
-            # Try to scroll to make sure months are visible
-            try:
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+            # Scroll down to find August month since it's lower on the page
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            time.sleep(2)
+            
+            # Look for August month element specifically
+            august_element = page.locator(f'text="{current_month}"').last  # Use .last to get the bottom one
+            
+            if august_element.count() > 0:
+                print(f"Found {current_month} month, scrolling to it")
+                august_element.scroll_into_view_if_needed()
                 time.sleep(1)
-            except:
-                pass
-            
-            month_selectors = [
-                f'text="{current_month}"',
-                f'button:has-text("{current_month}")',
-                f'a:has-text("{current_month}")',
-                f'[data-month="{current_month.lower()}"]'
-            ]
-            
-            month_found = False
-            for selector in month_selectors:
-                elements = page.locator(selector)
-                count = elements.count()
                 
-                if count > 0:
-                    print(f"Found {count} elements with selector: {selector}")
-                    
-                    # Try each matching element until we find a clickable one
-                    for i in range(count):
-                        element = elements.nth(i)
-                        
-                        try:
-                            if element.is_visible():
-                                print(f"Clicking visible {current_month} element {i+1}")
-                                element.click()
-                                print(f"Clicked {current_month} month")
-                                page.wait_for_load_state("networkidle")
-                                time.sleep(2)
-                                month_found = True
-                                break
-                            else:
-                                print(f"Element {i+1} not visible, trying to scroll it into view")
-                                element.scroll_into_view_if_needed()
-                                time.sleep(1)
-                                if element.is_visible():
-                                    element.click()
-                                    print(f"Clicked {current_month} month after scrolling")
-                                    page.wait_for_load_state("networkidle")
-                                    time.sleep(2)
-                                    month_found = True
-                                    break
-                        except Exception as e:
-                            print(f"Error clicking element {i+1}: {e}")
-                            continue
-                
-                if month_found:
-                    break
-            
-            if not month_found:
-                print(f"Could not find or click {current_month} month")
-                page.screenshot(path="debug_month_not_found.png")
-                return False
-            
-            print("Looking for CSV upload button...")
-            if page.locator('text="Pre-populate from a csv file"').count() > 0:
-                page.click('text="Pre-populate from a csv file"')
-                print("Clicked 'Pre-populate from a csv file'")
-                page.wait_for_load_state("networkidle")
+                # Click on August to expand/select it
+                august_element.click()
+                print(f"Clicked {current_month} month")
                 time.sleep(2)
+                
+                # Now look for the Pre-populate button that should appear under August
+                print("Looking for CSV upload button under August...")
+                
+                # The button should be visible now under the August section
+                csv_button = page.locator('text="Pre-populate from a csv file"').last
+                
+                if csv_button.count() > 0 and csv_button.is_visible():
+                    csv_button.click()
+                    print("Clicked 'Pre-populate from a csv file' button")
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(2)
+                else:
+                    print("CSV upload button not found under August")
+                    page.screenshot(path="debug_august_section.png")
+                    return False
+                    
             else:
-                print("Could not find CSV upload button")
+                print(f"Could not find {current_month} month")
+                page.screenshot(path="debug_no_august.png")
                 return False
             
             print("Looking for file input...")

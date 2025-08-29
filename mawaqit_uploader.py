@@ -385,13 +385,62 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             current_month = datetime.now().strftime('%B')
             print(f"Looking for {current_month} month...")
             
-            if page.locator(f'text="{current_month}"').count() > 0:
-                page.click(f'text="{current_month}"')
-                print(f"Clicked {current_month} month")
-                page.wait_for_load_state("networkidle")
-                time.sleep(2)
-            else:
-                print(f"Could not find {current_month} month")
+            # Try to scroll to make sure months are visible
+            try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+                time.sleep(1)
+            except:
+                pass
+            
+            month_selectors = [
+                f'text="{current_month}"',
+                f'button:has-text("{current_month}")',
+                f'a:has-text("{current_month}")',
+                f'[data-month="{current_month.lower()}"]'
+            ]
+            
+            month_found = False
+            for selector in month_selectors:
+                elements = page.locator(selector)
+                count = elements.count()
+                
+                if count > 0:
+                    print(f"Found {count} elements with selector: {selector}")
+                    
+                    # Try each matching element until we find a clickable one
+                    for i in range(count):
+                        element = elements.nth(i)
+                        
+                        try:
+                            if element.is_visible():
+                                print(f"Clicking visible {current_month} element {i+1}")
+                                element.click()
+                                print(f"Clicked {current_month} month")
+                                page.wait_for_load_state("networkidle")
+                                time.sleep(2)
+                                month_found = True
+                                break
+                            else:
+                                print(f"Element {i+1} not visible, trying to scroll it into view")
+                                element.scroll_into_view_if_needed()
+                                time.sleep(1)
+                                if element.is_visible():
+                                    element.click()
+                                    print(f"Clicked {current_month} month after scrolling")
+                                    page.wait_for_load_state("networkidle")
+                                    time.sleep(2)
+                                    month_found = True
+                                    break
+                        except Exception as e:
+                            print(f"Error clicking element {i+1}: {e}")
+                            continue
+                
+                if month_found:
+                    break
+            
+            if not month_found:
+                print(f"Could not find or click {current_month} month")
+                page.screenshot(path="debug_month_not_found.png")
                 return False
             
             print("Looking for CSV upload button...")

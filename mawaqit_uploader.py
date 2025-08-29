@@ -321,14 +321,53 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 else:
                     print("✅ Login appears successful (URL changed)")
             
+            print("Looking for Actions dropdown...")
+            # First click the Actions dropdown to reveal Configure option
+            actions_selectors = [
+                'button:has-text("Actions")',
+                'text="Actions"',
+                '.dropdown:has-text("Actions")',
+                '[data-toggle="dropdown"]:has-text("Actions")'
+            ]
+            
+            actions_found = False
+            for selector in actions_selectors:
+                if page.locator(selector).count() > 0:
+                    print(f"Found Actions dropdown: {selector}")
+                    page.click(selector)
+                    print("Clicked Actions dropdown")
+                    time.sleep(1)
+                    actions_found = True
+                    break
+            
+            if not actions_found:
+                print("Actions dropdown not found, trying direct Configure link...")
+            
             print("Looking for Configure option...")
-            if page.locator('text="Configure"').count() > 0:
-                page.click('text="Configure"')
-                print("Clicked Configure")
-                page.wait_for_load_state("networkidle")
-                time.sleep(2)
-            else:
-                print("Configure option not found")
+            configure_selectors = [
+                'text="Configure"',
+                'a:has-text("Configure")',
+                '[href*="configure"]'
+            ]
+            
+            configure_found = False
+            for selector in configure_selectors:
+                if page.locator(selector).count() > 0:
+                    # Check if element is visible
+                    if page.locator(selector).is_visible():
+                        page.click(selector)
+                        print("Clicked Configure")
+                        page.wait_for_load_state("networkidle")
+                        time.sleep(2)
+                        configure_found = True
+                        break
+                    else:
+                        print(f"Configure found but not visible: {selector}")
+            
+            if not configure_found:
+                print("Configure option not found or not visible")
+                # Take screenshot for debugging
+                page.screenshot(path="debug_configure_not_found.png")
                 return False
             
             if page.locator('text="Iqama"').count() > 0:

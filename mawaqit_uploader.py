@@ -1,4 +1,149 @@
-#!/usr/bin/env python3
+print("Looking for prayer times configuration...")
+            
+            # Step 1: Click "Configure" from the Actions dropdown
+            print("Looking for Configure option...")
+            if page.locator('text="Configure"').count() > 0:
+                page.click('text="Configure"')
+                print("Clicked Configure")
+                page.wait_for_load_state("networkidle")
+                time.sleep(2)
+            
+            # Step 2: Navigate to Iqama section and "By calendar" tab
+            if page.locator('text="Iqama"').count() > 0:
+                page.click('text="Iqama"')
+                print("Clicked Iqama section")
+                page.wait_for_load_state("networkidle")
+                time.sleep(1)
+            
+            if page.locator('text="By calendar"').count() > 0:
+                page.click('text="By calendar"')
+                print("Clicked 'By calendar' tab")
+                page.wait_for_load_state("networkidle")
+                time.sleep(1)
+            
+            # Step 3: Click on current month (August)
+            current_month = datetime.now().strftime('%B')
+            print(f"Looking for {current_month} month...")
+            
+            if page.locator(f'text="{current_month}"').count() > 0:
+                page.click(f'text="{current_month}"')
+                print(f"Clicked {current_month} month")
+                page.wait_for_load_state("networkidle")
+                time.sleep(2)
+            else:
+                print(f"Could not find {current_month} month")
+                return False
+            
+            # Step 4: Click "Pre-populate from a csv file"
+            print("Looking for CSV upload button...")
+            csv_upload_selectors = [
+                'text="Pre-populate from a csv file"',
+                'button:has-text("Pre-populate")',
+                '[data-action="csv-upload"]'
+            ]
+            
+            upload_button_found = False
+            for selector in csv_upload_selectors:
+                if page.locator(selector).count() > 0:
+                    page.click(selector)
+                    print("Clicked 'Pre-populate from a csv file'")
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(2)
+                    upload_button_found = True
+                    break
+            
+            if not upload_button_found:
+                print("Could not find CSV upload button")
+                return False
+            
+            # Step 5: Upload the CSV file
+            print("Looking for file input...")
+            file_input = page.locator('input[type="file"]')
+            
+            if file_input.count() > 0:
+                # Upload Iqama times CSV for current month
+                iqama_csv_path = os.path.join('./prayer_times', f'iqama_times_{current_month}.csv')
+                
+                if os.path.exists(iqama_csv_path):
+                    print(f"Uploading file: {iqama_csv_path}")
+                    file_input.set_input_files(iqama_csv_path)
+                    print("File uploaded successfully")
+                    
+                    # Wait for upload to process
+                    time.sleep(3)
+                    
+                    # Look for and click submit/save button
+                    submit_selectors = [
+                        'button:has-text("Upload")',
+                        'button:has-text("Submit")',
+                        'button:has-text("Save")',
+                        'input[type="submit"]'
+                    ]
+                    
+                    for selector in submit_selectors:
+                        if page.locator(selector).count() > 0:
+                            page.click(selector)
+                            print(f"Clicked submit button: {selector}")
+                            break
+                    
+                    # Wait for processing
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(2)
+                    
+                    print("CSV upload completed!")
+                    return True
+                    
+                else:
+                    print(f"CSV file not found: {iqama_csv_path}")
+                    return False
+            else:
+                print("File input not found")
+                return False            print("Looking for prayer times configuration...")
+            
+            # Step 1: Click "Configure" from the Actions dropdown
+            print("Looking for Configure option...")
+            if page.locator('text="Configure"').count() > 0:
+                page.click('text="Configure"')
+                print("Clicked Configure")
+                page.wait_for_load_state("networkidle")
+                time.sleep(2)
+            else:
+                print("Configure option not found")
+                return False
+            
+            # Step 2: Navigate to Iqama section (where the calendar is)
+            print("Looking for Iqama section...")
+            iqama_selectors = [
+                'text="Iqama"',
+                '[href*="iqama"]',
+                'a:has-text("Iqama")'
+            ]
+            
+            for selector in iqama_selectors:
+                if page.locator(selector).count() > 0:
+                    page.click(selector)
+                    print("Clicked Iqama section")
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(2)
+                    break
+            
+            # Step 3: Click "By calendar" tab
+            print("Looking for 'By calendar' tab...")
+            calendar_selectors = [
+                'text="By calendar"',
+                'a:has-text("By calendar")',
+                '[data-tab="calendar"]'
+            ]
+            
+            for selector in calendar_selectors:
+                if page.locator(selector).count() > 0:
+                    page.click(selector)
+                    print("Clicked 'By calendar' tab")
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(2)
+                    break
+            
+            # Step 4: Click on#!/usr/bin/env python3
 """
 Mawaqit Prayer Times Uploader with 2Captcha integration
 """
@@ -437,7 +582,7 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                     print("✅ Login appears successful (URL changed)")
             
             # Navigate to prayer times configuration
-            print("🔍 Looking for prayer times configuration...")
+            print("Looking for prayer times configuration...")
             
             # Try common navigation patterns
             nav_links = [
@@ -445,22 +590,127 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 'a:has-text("Prayer")',
                 'a:has-text("Athan")',
                 'a[href*="prayer"]',
-                'a[href*="athan"]'
+                'a[href*="athan"]',
+                'text="Athan & Iqama"'
             ]
             
             for link in nav_links:
                 if page.locator(link).count() > 0:
-                    print(f"🔗 Clicking: {link}")
+                    print(f"Clicking: {link}")
                     page.click(link)
                     page.wait_for_load_state("networkidle")
+                    time.sleep(2)
                     break
             
-            print("✅ Basic login and navigation completed!")
-            print(f"📊 Ready to upload {len(prayer_times)} days of prayer times")
+            print("Looking for prayer times form...")
+            page.screenshot(path="debug_prayer_form.png")
             
-            # Here you would add the actual form filling logic
-            # For now, we've proven the login works
+            # Fill prayer times for each day
+            today = datetime.now().day
+            filled_days = 0
+            errors = []
             
+            for day, times in prayer_times.items():
+                try:
+                    day_marker = " (TODAY)" if day == today else ""
+                    print(f"Processing day {day}{day_marker}...")
+                    
+                    # Try multiple selector patterns for Mawaqit's form
+                    day_selectors = [
+                        f'input[name*="day_{day}"]',
+                        f'input[data-day="{day}"]',
+                        f'td[data-day="{day}"] input',
+                        f'tr:has-text("{day}") input',
+                        f'[data-date="{day:02d}"] input'
+                    ]
+                    
+                    day_filled = False
+                    
+                    for base_selector in day_selectors:
+                        if page.locator(base_selector).count() > 0:
+                            print(f"  Found inputs for day {day}")
+                            
+                            # Fill each prayer time
+                            prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']
+                            
+                            for prayer in prayers:
+                                # Fill Athan time
+                                athan_time = times['athan'].get(prayer, '')
+                                if athan_time:
+                                    athan_selectors = [
+                                        f'{base_selector}[name*="{prayer}"][name*="athan"]',
+                                        f'{base_selector}[placeholder*="{prayer.title()}"]',
+                                        f'{base_selector}.{prayer}-athan'
+                                    ]
+                                    
+                                    for selector in athan_selectors:
+                                        if page.locator(selector).count() > 0:
+                                            page.fill(selector, athan_time)
+                                            print(f"    Filled {prayer} athan: {athan_time}")
+                                            break
+                                
+                                # Fill Iqama time
+                                iqama_time = times['iqama'].get(prayer, '')
+                                if iqama_time:
+                                    iqama_selectors = [
+                                        f'{base_selector}[name*="{prayer}"][name*="iqama"]',
+                                        f'{base_selector}[name*="{prayer}_iqama"]',
+                                        f'{base_selector}.{prayer}-iqama'
+                                    ]
+                                    
+                                    for selector in iqama_selectors:
+                                        if page.locator(selector).count() > 0:
+                                            page.fill(selector, iqama_time)
+                                            print(f"    Filled {prayer} iqama: {iqama_time}")
+                                            break
+                            
+                            day_filled = True
+                            break
+                    
+                    if day_filled:
+                        filled_days += 1
+                    else:
+                        errors.append(f"No form inputs found for day {day}")
+                    
+                    time.sleep(0.1)  # Small delay between days
+                    
+                except Exception as e:
+                    error_msg = f"Error filling day {day}: {e}"
+                    print(f"  Error: {error_msg}")
+                    errors.append(error_msg)
+            
+            print(f"Filled prayer times for {filled_days} days")
+            if errors:
+                print(f"Errors encountered: {len(errors)}")
+                for error in errors[:3]:
+                    print(f"  - {error}")
+            
+            # Save the changes
+            print("Looking for save button...")
+            save_selectors = [
+                'button:has-text("Save")',
+                'input[type="submit"]',
+                'button[type="submit"]',
+                '.btn-save',
+                '.btn-primary'
+            ]
+            
+            saved = False
+            for selector in save_selectors:
+                if page.locator(selector).count() > 0:
+                    page.click(selector)
+                    saved = True
+                    print(f"Clicked save button: {selector}")
+                    break
+            
+            if saved:
+                page.wait_for_load_state("networkidle")
+                print("Prayer times saved!")
+            else:
+                print("Could not find save button")
+                page.screenshot(path="debug_no_save_button.png")
+            
+            print("Prayer times upload completed!")
             return True
             
         except Exception as e:

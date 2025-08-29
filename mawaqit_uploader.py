@@ -1,4 +1,4 @@
-print("Looking for prayer times configuration...")
+print("🔍 Looking for prayer times configuration...")
             
             # Step 1: Click "Configure" from the Actions dropdown
             print("Looking for Configure option...")

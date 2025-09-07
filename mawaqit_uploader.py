@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mawaqit Prayer Times Uploader with 2Captcha integration
+Enhanced Mawaqit Prayer Times Uploader with improved debugging and robustness
 """
 
 import imaplib
@@ -14,6 +14,17 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 TWOCAPTCHA_API_KEY = "398d8ae5ed1cea23fdabf36c752e9774"
+
+def debug_page_state(page, step_name):
+    """Debug helper to capture page state"""
+    print(f"🔍 DEBUG {step_name}:")
+    print(f"   URL: {page.url}")
+    print(f"   Title: {page.title()}")
+    
+    # Save screenshot for debugging
+    screenshot_path = f"debug_{step_name.lower().replace(' ', '_')}.png"
+    page.screenshot(path=screenshot_path)
+    print(f"   Screenshot saved: {screenshot_path}")
 
 def solve_recaptcha_with_2captcha(page, site_key=None):
     print("Solving reCAPTCHA using 2Captcha...")
@@ -113,84 +124,99 @@ def solve_recaptcha_with_2captcha(page, site_key=None):
         print(f"Error solving reCAPTCHA: {e}")
         return False
 
-def get_2fa_code_from_email(gmail_user, gmail_app_password):
+def get_2fa_code_from_email(gmail_user, gmail_app_password, max_retries=5):
     print("📧 Checking Gmail for 2FA code...")
     
-    try:
-        imap = imaplib.IMAP4_SSL("imap.gmail.com")
-        imap.login(gmail_user, gmail_app_password)
-        imap.select("inbox")
+    for retry in range(max_retries):
+        try:
+            imap = imaplib.IMAP4_SSL("imap.gmail.com")
+            imap.login(gmail_user, gmail_app_password)
+            imap.select("inbox")
 
-        status, messages = imap.search(None, 'ALL')
-        if status != 'OK' or not messages[0]:
-            return None
+            # Search for recent emails from Mawaqit
+            status, messages = imap.search(None, 'FROM "mawaqit" SINCE "29-Aug-2025"')
+            if status != 'OK' or not messages[0]:
+                print(f"No recent Mawaqit emails found (attempt {retry + 1})")
+                if retry < max_retries - 1:
+                    time.sleep(30)  # Wait before retrying
+                    continue
+                return None
 
-        mail_ids = messages[0].split()
-        
-        for mail_id in reversed(mail_ids[-30:]):
-            try:
-                status, msg_data = imap.fetch(mail_id, "(RFC822)")
-                if status != 'OK':
-                    continue
-                    
-                raw_msg = msg_data[0][1]
-                msg = email.message_from_bytes(raw_msg)
-                
-                sender = msg.get('From', '').lower()
-                subject = msg.get('Subject', '').lower()
-                
-                if not any(domain in sender for domain in ['mawaqit.net', 'mawaqit.com']):
-                    continue
-                
-                if not any(keyword in subject for keyword in ['verification', 'code', 'authentication']):
-                    continue
-                
-                print(f"📧 Found Mawaqit verification email: {subject}")
-                
+            mail_ids = messages[0].split()
+            
+            for mail_id in reversed(mail_ids[-10:]):  # Check last 10 emails
                 try:
-                    email_date = email.utils.parsedate_to_datetime(msg['Date'])
-                    age_minutes = (datetime.now(email_date.tzinfo) - email_date).total_seconds() / 60
-                    print(f"📧 Email age: {age_minutes:.1f} minutes")
+                    status, msg_data = imap.fetch(mail_id, "(RFC822)")
+                    if status != 'OK':
+                        continue
+                        
+                    raw_msg = msg_data[0][1]
+                    msg = email.message_from_bytes(raw_msg)
                     
-                    if age_minutes > 120:
-                        continue
-                except:
-                    pass
-                
-                body = ""
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() in ["text/plain", "text/html"]:
-                            try:
-                                payload = part.get_payload(decode=True)
-                                if payload:
-                                    body += payload.decode('utf-8', errors='ignore')
-                            except:
-                                continue
-                else:
+                    sender = msg.get('From', '').lower()
+                    subject = msg.get('Subject', '').lower()
+                    
+                    print(f"📧 Found Mawaqit verification email: {subject}")
+                    
                     try:
-                        payload = msg.get_payload(decode=True)
-                        if payload:
-                            body = payload.decode('utf-8', errors='ignore')
+                        email_date = email.utils.parsedate_to_datetime(msg['Date'])
+                        age_minutes = (datetime.now(email_date.tzinfo) - email_date).total_seconds() / 60
+                        print(f"📧 Email age: {age_minutes:.1f} minutes")
+                        
+                        if age_minutes > 10:  # Only check very recent emails
+                            continue
                     except:
-                        continue
+                        pass
+                    
+                    body = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() in ["text/plain", "text/html"]:
+                                try:
+                                    payload = part.get_payload(decode=True)
+                                    if payload:
+                                        body += payload.decode('utf-8', errors='ignore')
+                                except:
+                                    continue
+                    else:
+                        try:
+                            payload = msg.get_payload(decode=True)
+                            if payload:
+                                body = payload.decode('utf-8', errors='ignore')
+                        except:
+                            continue
 
-                code_match = re.search(r'\b(\d{6})\b', body)
-                if code_match:
-                    code = code_match.group(1)
-                    print(f"✅ Found 2FA code: {code}")
-                    imap.close()
-                    imap.logout()
-                    return code
-                
-            except Exception:
-                continue
-        
-        imap.close()
-        imap.logout()
-        
-    except Exception as e:
-        print(f"❌ Error checking email: {e}")
+                    # Look for 6-digit codes
+                    code_patterns = [
+                        r'\b(\d{6})\b',  # Standard 6-digit code
+                        r'code[:\s]*(\d{6})',  # "code: 123456"
+                        r'verification[:\s]*(\d{6})',  # "verification: 123456"
+                    ]
+                    
+                    for pattern in code_patterns:
+                        code_match = re.search(pattern, body, re.IGNORECASE)
+                        if code_match:
+                            code = code_match.group(1)
+                            print(f"✅ Found 2FA code: {code}")
+                            imap.close()
+                            imap.logout()
+                            return code
+                    
+                except Exception as e:
+                    print(f"Error processing email: {e}")
+                    continue
+            
+            imap.close()
+            imap.logout()
+            
+            if retry < max_retries - 1:
+                print(f"No valid code found, waiting 30 seconds before retry {retry + 2}...")
+                time.sleep(30)
+            
+        except Exception as e:
+            print(f"❌ Error checking email (attempt {retry + 1}): {e}")
+            if retry < max_retries - 1:
+                time.sleep(30)
     
     return None
 
@@ -199,43 +225,86 @@ def read_prayer_times_csv(prayer_times_dir):
     athan_csv_path = os.path.join(prayer_times_dir, f'athan_times_{current_month}.csv')
     iqama_csv_path = os.path.join(prayer_times_dir, f'iqama_times_{current_month}.csv')
     
+    print(f"📁 Looking for CSV files:")
+    print(f"   Athan: {athan_csv_path}")
+    print(f"   Iqama: {iqama_csv_path}")
+    
     if not os.path.exists(athan_csv_path) or not os.path.exists(iqama_csv_path):
         print(f"❌ CSV files not found for {current_month}")
         return None
     
     prayer_times = {}
     
-    with open(athan_csv_path, 'r', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            day = row.get('Day')
-            if day:
-                prayer_times[int(day)] = {
-                    'athan': {
+    try:
+        with open(athan_csv_path, 'r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                day = row.get('Day')
+                if day:
+                    prayer_times[int(day)] = {
+                        'athan': {
+                            'fajr': row.get('Fajr', ''),
+                            'dhuhr': row.get('Dhuhr', ''),
+                            'asr': row.get('Asr', ''),
+                            'maghrib': row.get('Maghrib', ''),
+                            'isha': row.get('Isha', '')
+                        },
+                        'iqama': {}
+                    }
+        
+        with open(iqama_csv_path, 'r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                day = row.get('Day')
+                if day and int(day) in prayer_times:
+                    prayer_times[int(day)]['iqama'] = {
                         'fajr': row.get('Fajr', ''),
                         'dhuhr': row.get('Dhuhr', ''),
                         'asr': row.get('Asr', ''),
                         'maghrib': row.get('Maghrib', ''),
                         'isha': row.get('Isha', '')
-                    },
-                    'iqama': {}
-                }
+                    }
+        
+        print(f"📊 Loaded {len(prayer_times)} days of prayer times")
+        return prayer_times
+        
+    except Exception as e:
+        print(f"❌ Error reading CSV files: {e}")
+        return None
+
+def find_and_click_element(page, selectors, description, required=True, wait_time=2):
+    """Helper function to find and click elements with multiple selector fallbacks"""
+    print(f"Looking for {description}...")
     
-    with open(iqama_csv_path, 'r', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            day = row.get('Day')
-            if day and int(day) in prayer_times:
-                prayer_times[int(day)]['iqama'] = {
-                    'fajr': row.get('Fajr', ''),
-                    'dhuhr': row.get('Dhuhr', ''),
-                    'asr': row.get('Asr', ''),
-                    'maghrib': row.get('Maghrib', ''),
-                    'isha': row.get('Isha', '')
-                }
+    for i, selector in enumerate(selectors):
+        try:
+            elements = page.locator(selector)
+            count = elements.count()
+            
+            if count > 0:
+                # Check if any element is visible
+                for j in range(count):
+                    element = elements.nth(j)
+                    if element.is_visible():
+                        print(f"Found {description} with selector {i+1}: {selector}")
+                        element.click()
+                        print(f"Clicked {description}")
+                        time.sleep(wait_time)
+                        return True
+                        
+                print(f"Found {description} but not visible with selector: {selector}")
+            else:
+                print(f"Selector {i+1} not found: {selector}")
+                
+        except Exception as e:
+            print(f"Error with selector {selector}: {e}")
+            continue
     
-    print(f"📊 Loaded {len(prayer_times)} days of prayer times")
-    return prayer_times
+    if required:
+        print(f"❌ Could not find {description}")
+        debug_page_state(page, f"missing_{description.replace(' ', '_')}")
+    
+    return False
 
 def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_password, prayer_times_dir):
     print("🚀 Starting Mawaqit upload process...")
@@ -255,11 +324,15 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
         try:
             print("🌐 Navigating to Mawaqit login...")
             page.goto("https://mawaqit.net/en/backoffice/login", wait_until="load")
+            time.sleep(3)
+            
+            debug_page_state(page, "login_page")
             
             print("Filling login credentials...")
             page.fill('input[type="email"], input[name="email"]', mawaqit_email)
             page.fill('input[type="password"], input[name="password"]', mawaqit_password)
             
+            # Check for reCAPTCHA
             if page.locator('.g-recaptcha, iframe[src*="recaptcha"]').count() > 0:
                 print("reCAPTCHA detected - solving with 2Captcha...")
                 recaptcha_solved = solve_recaptcha_with_2captcha(page)
@@ -278,217 +351,313 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             print("⏳ Waiting for login response...")
             time.sleep(5)
             
+            debug_page_state(page, "after_login")
+            
             current_url = page.url
             page_content = page.content().lower()
             
-            if "verification" in page_content or "code" in page_content:
+            # Handle 2FA if required
+            if "verification" in page_content or "code" in page_content or "2fa" in page_content:
                 print("📧 2FA required - getting code from email...")
                 
                 verification_code = get_2fa_code_from_email(gmail_user, gmail_app_password)
                 
                 if not verification_code:
                     print("❌ No 2FA code found in recent emails")
+                    debug_page_state(page, "2fa_code_not_found")
                     return False
                 
+                # Try multiple selectors for 2FA input
                 code_inputs = [
                     'input[placeholder*="code" i]',
                     'input[name*="code" i]',
-                    'input[type="text"]'
+                    'input[name*="verification" i]',
+                    'input[type="text"]',
+                    'input[type="number"]'
                 ]
                 
                 code_entered = False
                 for selector in code_inputs:
                     if page.locator(selector).count() > 0:
-                        page.fill(selector, verification_code)
-                        code_entered = True
-                        print("✅ Entered 2FA code")
-                        break
+                        element = page.locator(selector).first
+                        if element.is_visible():
+                            element.fill(verification_code)
+                            code_entered = True
+                            print("✅ Entered 2FA code")
+                            break
                 
                 if not code_entered:
                     print("❌ Could not find 2FA input field")
+                    debug_page_state(page, "2fa_input_not_found")
                     return False
                 
                 page.click('button[type="submit"], input[type="submit"]')
-                time.sleep(3)
+                time.sleep(5)
             
+            # Wait for successful login
             try:
-                page.wait_for_url("**/backoffice/**", timeout=10000)
+                page.wait_for_url("**/backoffice/**", timeout=15000)
                 print("✅ Successfully logged into Mawaqit backoffice!")
             except PlaywrightTimeoutError:
                 if "login" in page.url.lower():
                     print("❌ Still on login page - login failed")
+                    debug_page_state(page, "login_failed")
                     return False
                 else:
                     print("✅ Login appears successful (URL changed)")
             
-            print("Looking for Actions dropdown...")
-            # First click the Actions dropdown to reveal Configure option
+            debug_page_state(page, "logged_in")
+            
+            # Step 1: Click Actions button
             actions_selectors = [
                 'button:has-text("Actions")',
-                'text="Actions"',
-                '.dropdown:has-text("Actions")',
-                '[data-toggle="dropdown"]:has-text("Actions")'
+                '.btn:has-text("Actions")',
+                '[class*="btn"]:has-text("Actions")'
             ]
             
-            actions_found = False
-            for selector in actions_selectors:
-                if page.locator(selector).count() > 0:
-                    print(f"Found Actions dropdown: {selector}")
-                    page.click(selector)
-                    print("Clicked Actions dropdown")
-                    time.sleep(1)
-                    actions_found = True
-                    break
+            if not find_and_click_element(page, actions_selectors, "Actions button"):
+                return False
             
-            if not actions_found:
-                print("Actions dropdown not found, trying direct Configure link...")
+            debug_page_state(page, "actions_clicked")
             
-            print("Looking for Configure option...")
+            # Step 2: Click Configure from dropdown
             configure_selectors = [
                 'text="Configure"',
                 'a:has-text("Configure")',
+                '.dropdown-item:has-text("Configure")',
                 '[href*="configure"]'
             ]
             
-            configure_found = False
-            for selector in configure_selectors:
-                if page.locator(selector).count() > 0:
-                    # Check if element is visible
-                    if page.locator(selector).is_visible():
-                        page.click(selector)
-                        print("Clicked Configure")
-                        page.wait_for_load_state("networkidle")
-                        time.sleep(2)
-                        configure_found = True
-                        break
-                    else:
-                        print(f"Configure found but not visible: {selector}")
-            
-            if not configure_found:
-                print("Configure option not found or not visible")
-                # Take screenshot for debugging
-                page.screenshot(path="debug_configure_not_found.png")
+            # Wait for dropdown to appear
+            time.sleep(1)
+            if not find_and_click_element(page, configure_selectors, "Configure option"):
                 return False
             
-            if page.locator('text="Iqama"').count() > 0:
-                page.click('text="Iqama"')
-                print("Clicked Iqama section")
-                page.wait_for_load_state("networkidle")
-                time.sleep(1)
+            debug_page_state(page, "configure_page")
             
-            if page.locator('text="By calendar"').count() > 0:
-                page.click('text="By calendar"')
-                print("Clicked 'By calendar' tab")
-                page.wait_for_load_state("networkidle")
-                time.sleep(1)
+            # Step 3: Click "Calculation of prayer times" to expand section
+            calculation_selectors = [
+                'text="Calculation of prayer times"',
+                'h3:has-text("Calculation of prayer times")',
+                'h4:has-text("Calculation of prayer times")',
+                '.panel-heading:has-text("Calculation of prayer times")',
+                '.card-header:has-text("Calculation of prayer times")'
+            ]
             
+            if not find_and_click_element(page, calculation_selectors, "Calculation of prayer times section"):
+                return False
+            
+            debug_page_state(page, "calculation_expanded")
+            
+            # Step 4: Click current month 
             current_month = datetime.now().strftime('%B')
             print(f"Looking for {current_month} month...")
             
-            # Scroll down to find August month since it's lower on the page
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            time.sleep(2)
+            month_selectors = [
+                f'text="{current_month}"',
+                f'h3:has-text("{current_month}")',
+                f'h4:has-text("{current_month}")',
+                f'.month-header:has-text("{current_month}")'
+            ]
             
-            # Look for August month element specifically
-            august_element = page.locator(f'text="{current_month}"').last  # Use .last to get the bottom one
+            if not find_and_click_element(page, month_selectors, f"{current_month} month"):
+                return False
+                
+            debug_page_state(page, "month_clicked")
             
-            if august_element.count() > 0:
-                print(f"Found {current_month} month, scrolling to it")
-                august_element.scroll_into_view_if_needed()
-                time.sleep(1)
-                
-                # Click on August to expand/select it
-                august_element.click()
-                print(f"Clicked {current_month} month")
-                time.sleep(2)
-                
-                # Now look for the Pre-populate button that should appear under August
-                print("Looking for CSV upload button under August...")
-                
-                # The button should be visible now under the August section
-                csv_button = page.locator('text="Pre-populate from a csv file"').last
-                
-                if csv_button.count() > 0 and csv_button.is_visible():
-                    csv_button.click()
-                    print("Clicked 'Pre-populate from a csv file' button")
-                    page.wait_for_load_state("networkidle")
-                    time.sleep(2)
-                else:
-                    print("CSV upload button not found under August")
-                    page.screenshot(path="debug_august_section.png")
-                    return False
-                    
-            else:
-                print(f"Could not find {current_month} month")
-                page.screenshot(path="debug_no_august.png")
+            # Step 5: Upload Athan CSV
+            print("📄 Uploading Athan CSV...")
+            if not upload_csv_file(page, prayer_times_dir, current_month, 'athan'):
                 return False
             
-            print("Looking for file input...")
-            file_input = page.locator('input[type="file"]')
+            # Step 6: Navigate to Iqama section
+            iqama_selectors = [
+                'text="Iqama"',
+                'a:has-text("Iqama")',
+                '.nav-link:has-text("Iqama")',
+                'button:has-text("Iqama")',
+                '.tab:has-text("Iqama")'
+            ]
             
-            if file_input.count() > 0:
-                iqama_csv_path = os.path.join('./prayer_times', f'iqama_times_{current_month}.csv')
-                
-                if os.path.exists(iqama_csv_path):
-                    print(f"Uploading file: {iqama_csv_path}")
-                    file_input.set_input_files(iqama_csv_path)
-                    print("File uploaded successfully")
-                    
-                    time.sleep(3)
-                    
-                    submit_selectors = [
-                        'button:has-text("Upload")',
-                        'button:has-text("Submit")',
-                        'button:has-text("Save")',
-                        'input[type="submit"]'
-                    ]
-                    
-                    for selector in submit_selectors:
-                        if page.locator(selector).count() > 0:
-                            page.click(selector)
-                            print(f"Clicked submit button: {selector}")
-                            break
-                    
-                    page.wait_for_load_state("networkidle")
-                    time.sleep(2)
-                    
-                    print("CSV upload completed!")
-                    return True
-                    
-                else:
-                    print(f"CSV file not found: {iqama_csv_path}")
-                    return False
-            else:
-                print("File input not found")
+            if not find_and_click_element(page, iqama_selectors, "Iqama tab"):
                 return False
+                
+            debug_page_state(page, "iqama_tab")
+            
+            # Step 7: Click "By calendar" under Iqama
+            calendar_selectors = [
+                'text="By calendar"',
+                'a:has-text("By calendar")',
+                '.nav-link:has-text("By calendar")',
+                'button:has-text("By calendar")'
+            ]
+            
+            if not find_and_click_element(page, calendar_selectors, "By calendar tab"):
+                return False
+                
+            debug_page_state(page, "calendar_tab")
+            
+            # Step 8: Click current month again (under Iqama section)
+            if not find_and_click_element(page, month_selectors, f"{current_month} month (Iqama)"):
+                return False
+                
+            # Step 9: Upload Iqama CSV
+            print("📄 Uploading Iqama CSV...")
+            if not upload_csv_file(page, prayer_times_dir, current_month, 'iqama'):
+                return False
+            
+            print("✅ Both CSV files uploaded successfully!")
+            return True
+
+def upload_csv_file(page, prayer_times_dir, current_month, csv_type):
+    """Helper function to upload CSV files (athan or iqama)"""
+    
+    # Look for "Pre-populate from a csv file" button
+    csv_button_selectors = [
+        'text="Pre-populate from a csv file"',
+        'button:has-text("Pre-populate")',
+        'a:has-text("Pre-populate")',
+        '.btn:has-text("csv")',
+        'button:has-text("csv")'
+    ]
+    
+    # Wait for content to load
+    time.sleep(2)
+    
+    csv_button_found = False
+    for selector in csv_button_selectors:
+        elements = page.locator(selector)
+        if elements.count() > 0:
+            for i in range(elements.count()):
+                element = elements.nth(i)
+                try:
+                    if element.is_visible():
+                        element.scroll_into_view_if_needed()
+                        time.sleep(1)
+                        element.click()
+                        print(f"Clicked 'Pre-populate from csv' button")
+                        time.sleep(2)
+                        csv_button_found = True
+                        break
+                except Exception as e:
+                    print(f"Error clicking csv button: {e}")
+                    continue
+            if csv_button_found:
+                break
+    
+    if not csv_button_found:
+        print(f"❌ CSV upload button not found for {csv_type}")
+        page.screenshot(path=f"debug_csv_button_not_found_{csv_type}.png")
+        return False
+    
+    # Look for file input
+    file_input_selectors = [
+        'input[type="file"]',
+        'input[accept*="csv"]',
+        '.file-input input'
+    ]
+    
+    file_input_found = False
+    for selector in file_input_selectors:
+        if page.locator(selector).count() > 0:
+            file_input = page.locator(selector).first
+            
+            csv_filename = f'{csv_type}_times_{current_month}.csv'
+            csv_path = os.path.join(prayer_times_dir, csv_filename)
+            
+            if os.path.exists(csv_path):
+                print(f"📁 Uploading {csv_type} file: {csv_path}")
+                file_input.set_input_files(csv_path)
+                print(f"✅ {csv_type.capitalize()} file uploaded successfully")
+                file_input_found = True
+                break
+            else:
+                print(f"❌ CSV file not found: {csv_path}")
+                return False
+    
+    if not file_input_found:
+        print(f"❌ File input not found for {csv_type}")
+        page.screenshot(path=f"debug_file_input_not_found_{csv_type}.png")
+        return False
+    
+    time.sleep(2)
+    
+    # Submit the form
+    submit_selectors = [
+        'button:has-text("Upload")',
+        'button:has-text("Submit")',
+        'button:has-text("Save")',
+        'input[type="submit"]',
+        '.btn-primary',
+        '.btn-success'
+    ]
+    
+    submit_found = False
+    for selector in submit_selectors:
+        if page.locator(selector).count() > 0:
+            elements = page.locator(selector)
+            for i in range(elements.count()):
+                element = elements.nth(i)
+                try:
+                    if element.is_visible():
+                        element.click()
+                        print(f"Clicked submit button for {csv_type}")
+                        time.sleep(3)
+                        submit_found = True
+                        break
+                except Exception as e:
+                    continue
+            if submit_found:
+                break
+    
+    if not submit_found:
+        print(f"⚠️ Submit button not found for {csv_type}, but file was uploaded")
+    
+    return True
             
         except Exception as e:
             print(f"❌ Error during upload: {e}")
+            debug_page_state(page, "error_occurred")
             return False
         finally:
+            print("🔄 Closing browser...")
             browser.close()
 
 def main():
-    mawaqit_email = os.getenv('MAWAQIT_USER')
-    mawaqit_password = os.getenv('MAWAQIT_PASS') 
-    gmail_user = os.getenv('GMAIL_USER')
-    gmail_app_password = os.getenv('GMAIL_APP_PASSWORD')
-    prayer_times_dir = os.getenv('PRAYER_TIMES_DIR', './prayer_times')
+    print("🕌 Mawaqit Prayer Times Uploader v2.0")
+    print("=" * 50)
     
-    if not all([mawaqit_email, mawaqit_password, gmail_user, gmail_app_password]):
-        print("❌ Missing required environment variables")
+    # Check environment variables
+    required_vars = {
+        'MAWAQIT_USER': os.getenv('MAWAQIT_USER'),
+        'MAWAQIT_PASS': os.getenv('MAWAQIT_PASS'),
+        'GMAIL_USER': os.getenv('GMAIL_USER'),
+        'GMAIL_APP_PASSWORD': os.getenv('GMAIL_APP_PASSWORD')
+    }
+    
+    missing_vars = [var for var, value in required_vars.items() if not value]
+    if missing_vars:
+        print(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
         return False
     
+    prayer_times_dir = os.getenv('PRAYER_TIMES_DIR', './prayer_times')
+    
+    print("✅ All environment variables found")
+    print(f"📁 Prayer times directory: {prayer_times_dir}")
+    
     success = upload_to_mawaqit(
-        mawaqit_email, mawaqit_password, 
-        gmail_user, gmail_app_password,
+        required_vars['MAWAQIT_USER'], 
+        required_vars['MAWAQIT_PASS'], 
+        required_vars['GMAIL_USER'], 
+        required_vars['GMAIL_APP_PASSWORD'],
         prayer_times_dir
     )
     
     if success:
-        print("🎉 Mawaqit process completed successfully!")
+        print("\n🎉 Mawaqit process completed successfully!")
     else:
-        print("💥 Mawaqit process failed!")
+        print("\n💥 Mawaqit process failed!")
+        print("🔍 Check debug screenshots for troubleshooting")
     
     return success
 

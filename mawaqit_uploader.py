@@ -306,6 +306,112 @@ def find_and_click_element(page, selectors, description, required=True, wait_tim
     
     return False
 
+def upload_csv_file(page, prayer_times_dir, current_month, csv_type):
+    """Helper function to upload CSV files (athan or iqama)"""
+    
+    # Look for "Pre-populate from a csv file" button
+    csv_button_selectors = [
+        'text="Pre-populate from a csv file"',
+        'button:has-text("Pre-populate")',
+        'a:has-text("Pre-populate")',
+        '.btn:has-text("csv")',
+        'button:has-text("csv")'
+    ]
+    
+    # Wait for content to load
+    time.sleep(2)
+    
+    csv_button_found = False
+    for selector in csv_button_selectors:
+        elements = page.locator(selector)
+        if elements.count() > 0:
+            for i in range(elements.count()):
+                element = elements.nth(i)
+                try:
+                    if element.is_visible():
+                        element.scroll_into_view_if_needed()
+                        time.sleep(1)
+                        element.click()
+                        print(f"Clicked 'Pre-populate from csv' button")
+                        time.sleep(2)
+                        csv_button_found = True
+                        break
+                except Exception as e:
+                    print(f"Error clicking csv button: {e}")
+                    continue
+            if csv_button_found:
+                break
+    
+    if not csv_button_found:
+        print(f"❌ CSV upload button not found for {csv_type}")
+        page.screenshot(path=f"debug_csv_button_not_found_{csv_type}.png")
+        return False
+    
+    # Look for file input
+    file_input_selectors = [
+        'input[type="file"]',
+        'input[accept*="csv"]',
+        '.file-input input'
+    ]
+    
+    file_input_found = False
+    for selector in file_input_selectors:
+        if page.locator(selector).count() > 0:
+            file_input = page.locator(selector).first
+            
+            csv_filename = f'{csv_type}_times_{current_month}.csv'
+            csv_path = os.path.join(prayer_times_dir, csv_filename)
+            
+            if os.path.exists(csv_path):
+                print(f"📁 Uploading {csv_type} file: {csv_path}")
+                file_input.set_input_files(csv_path)
+                print(f"✅ {csv_type.capitalize()} file uploaded successfully")
+                file_input_found = True
+                break
+            else:
+                print(f"❌ CSV file not found: {csv_path}")
+                return False
+    
+    if not file_input_found:
+        print(f"❌ File input not found for {csv_type}")
+        page.screenshot(path=f"debug_file_input_not_found_{csv_type}.png")
+        return False
+    
+    time.sleep(2)
+    
+    # Submit the form
+    submit_selectors = [
+        'button:has-text("Upload")',
+        'button:has-text("Submit")',
+        'button:has-text("Save")',
+        'input[type="submit"]',
+        '.btn-primary',
+        '.btn-success'
+    ]
+    
+    submit_found = False
+    for selector in submit_selectors:
+        if page.locator(selector).count() > 0:
+            elements = page.locator(selector)
+            for i in range(elements.count()):
+                element = elements.nth(i)
+                try:
+                    if element.is_visible():
+                        element.click()
+                        print(f"Clicked submit button for {csv_type}")
+                        time.sleep(3)
+                        submit_found = True
+                        break
+                except Exception as e:
+                    continue
+            if submit_found:
+                break
+    
+    if not submit_found:
+        print(f"⚠️ Submit button not found for {csv_type}, but file was uploaded")
+    
+    return True
+
 def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_password, prayer_times_dir):
     print("🚀 Starting Mawaqit upload process...")
     
@@ -508,120 +614,6 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             
             print("✅ Both CSV files uploaded successfully!")
             return True
-            
-        except Exception as e:
-            print(f"❌ Error during upload: {e}")
-            debug_page_state(page, "error_occurred")
-            return False
-        finally:
-            print("🔄 Closing browser...")
-            browser.close()
-
-def upload_csv_file(page, prayer_times_dir, current_month, csv_type):
-    """Helper function to upload CSV files (athan or iqama)"""
-    
-    # Look for "Pre-populate from a csv file" button
-    csv_button_selectors = [
-        'text="Pre-populate from a csv file"',
-        'button:has-text("Pre-populate")',
-        'a:has-text("Pre-populate")',
-        '.btn:has-text("csv")',
-        'button:has-text("csv")'
-    ]
-    
-    # Wait for content to load
-    time.sleep(2)
-    
-    csv_button_found = False
-    for selector in csv_button_selectors:
-        elements = page.locator(selector)
-        if elements.count() > 0:
-            for i in range(elements.count()):
-                element = elements.nth(i)
-                try:
-                    if element.is_visible():
-                        element.scroll_into_view_if_needed()
-                        time.sleep(1)
-                        element.click()
-                        print(f"Clicked 'Pre-populate from csv' button")
-                        time.sleep(2)
-                        csv_button_found = True
-                        break
-                except Exception as e:
-                    print(f"Error clicking csv button: {e}")
-                    continue
-            if csv_button_found:
-                break
-    
-    if not csv_button_found:
-        print(f"❌ CSV upload button not found for {csv_type}")
-        page.screenshot(path=f"debug_csv_button_not_found_{csv_type}.png")
-        return False
-    
-    # Look for file input
-    file_input_selectors = [
-        'input[type="file"]',
-        'input[accept*="csv"]',
-        '.file-input input'
-    ]
-    
-    file_input_found = False
-    for selector in file_input_selectors:
-        if page.locator(selector).count() > 0:
-            file_input = page.locator(selector).first
-            
-            csv_filename = f'{csv_type}_times_{current_month}.csv'
-            csv_path = os.path.join(prayer_times_dir, csv_filename)
-            
-            if os.path.exists(csv_path):
-                print(f"📁 Uploading {csv_type} file: {csv_path}")
-                file_input.set_input_files(csv_path)
-                print(f"✅ {csv_type.capitalize()} file uploaded successfully")
-                file_input_found = True
-                break
-            else:
-                print(f"❌ CSV file not found: {csv_path}")
-                return False
-    
-    if not file_input_found:
-        print(f"❌ File input not found for {csv_type}")
-        page.screenshot(path=f"debug_file_input_not_found_{csv_type}.png")
-        return False
-    
-    time.sleep(2)
-    
-    # Submit the form
-    submit_selectors = [
-        'button:has-text("Upload")',
-        'button:has-text("Submit")',
-        'button:has-text("Save")',
-        'input[type="submit"]',
-        '.btn-primary',
-        '.btn-success'
-    ]
-    
-    submit_found = False
-    for selector in submit_selectors:
-        if page.locator(selector).count() > 0:
-            elements = page.locator(selector)
-            for i in range(elements.count()):
-                element = elements.nth(i)
-                try:
-                    if element.is_visible():
-                        element.click()
-                        print(f"Clicked submit button for {csv_type}")
-                        time.sleep(3)
-                        submit_found = True
-                        break
-                except Exception as e:
-                    continue
-            if submit_found:
-                break
-    
-    if not submit_found:
-        print(f"⚠️ Submit button not found for {csv_type}, but file was uploaded")
-    
-    return True
             
         except Exception as e:
             print(f"❌ Error during upload: {e}")

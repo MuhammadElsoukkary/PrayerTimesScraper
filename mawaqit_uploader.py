@@ -508,6 +508,14 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
             
             print("✅ Both CSV files uploaded successfully!")
             return True
+            
+        except Exception as e:
+            print(f"❌ Error during upload: {e}")
+            debug_page_state(page, "error_occurred")
+            return False
+        finally:
+            print("🔄 Closing browser...")
+            browser.close()
 
 def upload_csv_file(page, prayer_times_dir, current_month, csv_type):
     """Helper function to upload CSV files (athan or iqama)"""

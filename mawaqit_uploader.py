@@ -444,8 +444,15 @@ def upload_to_mawaqit(mawaqit_email, mawaqit_password, gmail_user, gmail_app_pas
                 recaptcha_solved = solve_recaptcha_with_2captcha(page)
                 
                 if not recaptcha_solved:
-                    print("Failed to solve reCAPTCHA")
-                    return False
+                    print("Failed to solve reCAPTCHA automatically")
+                    print("⏸️ Manual intervention may be required")
+                    # In CI environment, we can't proceed without solving reCAPTCHA
+                    if is_headless:
+                        print("❌ Cannot proceed in headless mode without solving reCAPTCHA")
+                        return False
+                    else:
+                        print("💡 Please solve the reCAPTCHA manually and press Enter...")
+                        input("Press Enter after solving reCAPTCHA...")
                 else:
                     print("reCAPTCHA solved successfully!")
             else:

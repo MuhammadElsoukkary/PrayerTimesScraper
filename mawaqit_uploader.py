@@ -719,4 +719,209 @@ class MawaqitUploader:
         # Click on current month
         month_selectors = [
             f'text="{current_month}"',
-            f'h3:has-text("{current_month}"
+            f'h3:has-text("{current_month}")',
+            f'h4:has-text("{current_month}")',
+            f'.month-header:has-text("{current_month}")',
+            f'[data-month="{current_month}"]',
+            f'a:has-text("{current_month}")'
+        ]
+        
+        if not self.smart_click(month_selectors, f"{current_month} month"):
+            return False
+        
+        self.save_debug_screenshot(f"month_{current_month}_selected")
+        
+        # Upload Athan CSV
+        self.debug_log("Uploading Athan times", "INFO")
+        if not self.upload_csv_file('athan'):
+            return False
+        
+        # Navigate to Iqama tab
+        iqama_selectors = [
+            'text="Iqama"',
+            'a:has-text("Iqama")',
+            '.nav-link:has-text("Iqama")',
+            '.tab:has-text("Iqama")',
+            'button:has-text("Iqama")',
+            '[href*="iqama"]'
+        ]
+        
+        if not self.smart_click(iqama_selectors, "Iqama tab"):
+            return False
+        
+        # Click "By calendar" for Iqama
+        calendar_selectors = [
+            'text="By calendar"',
+            'a:has-text("By calendar")',
+            '.nav-link:has-text("By calendar")',
+            'button:has-text("By calendar")',
+            '[href*="calendar"]'
+        ]
+        
+        if not self.smart_click(calendar_selectors, "By calendar option"):
+            return False
+        
+        # Click month again for Iqama section
+        if not self.smart_click(month_selectors, f"{current_month} month (Iqama)"):
+            return False
+        
+        # Upload Iqama CSV
+        self.debug_log("Uploading Iqama times", "INFO")
+        if not self.upload_csv_file('iqama'):
+            return False
+        
+        self.debug_log("Both CSV files uploaded successfully!", "SUCCESS")
+        return True
+    
+    def run(self) -> bool:
+        """Main execution method"""
+        self.debug_log("Starting Mawaqit Prayer Times Uploader v3.0", "INFO")
+        self.debug_log("=" * 60, "INFO")
+        
+        # Validate prayer times exist
+        prayer_times = self.read_prayer_times_csv()
+        if not prayer_times:
+            return False
+        
+        # Determine browser mode
+        is_headless = bool(os.getenv('CI')) or bool(os.getenv('GITHUB_ACTIONS'))
+        self.debug_log(f"Browser mode: {'headless' if is_headless else 'headed'}", "INFO")
+        
+        try:
+            with sync_playwright() as p:
+                # Launch browser with optimized settings
+                self.browser = p.chromium.launch(
+                    headless=is_headless,
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox'
+                    ]
+                )
+                
+                # Create context with realistic viewport
+                self.context = self.browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
+                
+                # Create page
+                self.page = self.context.new_page()
+                
+                # Set default timeout
+                self.page.set_default_timeout(30000)
+                
+                # Perform login
+                if not self.perform_login():
+                    self.debug_log("Login failed", "ERROR")
+                    return False
+                
+                # Navigate to configuration
+                if not self.navigate_to_prayer_times_config():
+                    self.debug_log("Failed to navigate to configuration", "ERROR")
+                    return False
+                
+                # Upload prayer times
+                if not self.upload_monthly_times():
+                    self.debug_log("Failed to upload prayer times", "ERROR")
+                    return False
+                
+                self.debug_log("Process completed successfully!", "SUCCESS")
+                return True
+                
+        except Exception as e:
+            self.debug_log(f"Unexpected error: {e}", "ERROR")
+            self.save_debug_screenshot("error_state")
+            return False
+            
+        finally:
+            if self.browser:
+                self.debug_log("Closing browser", "INFO")
+                self.browser.close()
+
+
+def validate_environment() -> Tuple[bool, Dict[str, str]]:
+    """Validate required environment variables"""
+    required_vars = {
+        'MAWAQIT_USER': os.getenv('MAWAQIT_USER'),
+        'MAWAQIT_PASS': os.getenv('MAWAQIT_PASS'),
+        'GMAIL_USER': os.getenv('GMAIL_USER'),
+        'GMAIL_APP_PASSWORD': os.getenv('GMAIL_APP_PASSWORD')
+    }
+    
+    missing_vars = [var for var, value in required_vars.items() if not value]
+    
+    if missing_vars:
+        print(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
+        print("\nPlease set the following environment variables:")
+        for var in missing_vars:
+            print(f"  export {var}='your_value_here'")
+        return False, {}
+    
+    return True, required_vars
+
+
+def main():
+    """Main entry point"""
+    print("""
+    ╔══════════════════════════════════════════════════════════╗
+    ║       Mawaqit Prayer Times Uploader v3.0                 ║
+    ║       Enhanced with Smart reCAPTCHA & 2FA Handling       ║
+    ╚══════════════════════════════════════════════════════════╝
+    """)
+    
+    # Validate environment
+    valid, env_vars = validate_environment()
+    if not valid:
+        return 1
+    
+    # Get prayer times directory
+    prayer_times_dir = os.getenv('PRAYER_TIMES_DIR', './prayer_times')
+    
+    print(f"✅ Environment validated")
+    print(f"📁 Prayer times directory: {prayer_times_dir}")
+    print(f"🌐 2Captcha API configured")
+    print("-" * 60)
+    
+    # Create uploader instance
+    uploader = MawaqitUploader(
+        mawaqit_email=env_vars['MAWAQIT_USER'],
+        mawaqit_password=env_vars['MAWAQIT_PASS'],
+        gmail_user=env_vars['GMAIL_USER'],
+        gmail_app_password=env_vars['GMAIL_APP_PASSWORD'],
+        prayer_times_dir=prayer_times_dir
+    )
+    
+    # Run the upload process
+    success = False
+    for attempt in range(MAX_RETRIES):
+        if attempt > 0:
+            print(f"\n🔄 Retry attempt {attempt}/{MAX_RETRIES - 1}")
+            time.sleep(5)
+        
+        try:
+            success = uploader.run()
+            if success:
+                break
+        except KeyboardInterrupt:
+            print("\n⚠️ Process interrupted by user")
+            return 130
+        except Exception as e:
+            print(f"❌ Attempt {attempt + 1} failed: {e}")
+    
+    # Final result
+    print("\n" + "=" * 60)
+    if success:
+        print("🎉 SUCCESS: Prayer times uploaded to Mawaqit!")
+        print("✅ Both Athan and Iqama times have been updated")
+        return 0
+    else:
+        print("❌ FAILED: Could not complete the upload process")
+        print("📸 Check debug screenshots for troubleshooting")
+        print("📧 Verify your credentials and 2FA email access")
+        return 1
+
+
+if __name__ == "__main__":
+    exit(main())

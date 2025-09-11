@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Enhanced Mawaqit Prayer Times Uploader v3.0
-- Improved 2Captcha integration with proper waiting and retry logic
-- Better UI element detection and interaction
-- Enhanced error handling and recovery
-- More robust email verification code retrieval
+Enhanced Mawaqit Prayer Times Uploader v3.1
+- Fixed 2FA email detection with improved search criteria
+- Added manual 2FA code input option
+- Better email debugging
+- Option to skip 2FA if not required
 """
 
 import imaplib
@@ -20,10 +20,11 @@ from typing import Optional, Dict, List, Tuple
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError, Page
 
 # Configuration
-TWOCAPTCHA_API_KEY = "398d8ae5ed1cea23fdabf36c752e9774"
+TWOCAPTCHA_API_KEY = os.getenv('TWOCAPTCHA_API_KEY', "398d8ae5ed1cea23fdabf36c752e9774")
 DEBUG_MODE = True  # Set to False in production
 MAX_RETRIES = 3
 WAIT_BETWEEN_ACTIONS = 2  # seconds
+MANUAL_2FA_CODE = os.getenv('MANUAL_2FA_CODE')  # Optional: set this to bypass email check
 
 class MawaqitUploader:
     def __init__(self, mawaqit_email: str, mawaqit_password: str, 
@@ -122,6 +123,10 @@ class MawaqitUploader:
         """Enhanced 2Captcha solver with better error handling"""
         self.debug_log("Starting 2Captcha reCAPTCHA solving process", "INFO")
         
+        if not TWOCAPTCHA_API_KEY or TWOCAPTCHA_API_KEY == "":
+            self.debug_log("2Captcha API key not configured", "ERROR")
+            return False
+        
         try:
             # Detect reCAPTCHA if site_key not provided
             if not site_key:
@@ -198,14 +203,14 @@ class MawaqitUploader:
                         # Inject solution into page
                         injection_script = f"""
                         (function() {{
-                            // Method 1: Set g-recaptcha-response textarea
+                            // Set g-recaptcha-response textarea
                             const textareas = document.querySelectorAll('[name="g-recaptcha-response"]');
                             textareas.forEach(textarea => {{
                                 textarea.value = "{solution}";
                                 textarea.style.display = 'block';
                             }});
                             
-                            // Method 2: Override grecaptcha.getResponse
+                            // Override grecaptcha.getResponse
                             if (typeof grecaptcha !== 'undefined') {{
                                 grecaptcha.getResponse = function() {{ return "{solution}"; }};
                                 
@@ -224,16 +229,12 @@ class MawaqitUploader:
                                 }}
                             }}
                             
-                            // Method 3: Dispatch events
-                            const event = new Event('captcha-solved');
-                            document.dispatchEvent(event);
-                            
                             console.log('2Captcha solution injected successfully');
                             return true;
                         }})();
                         """
                         
-                        injection_result = self.page.evaluate(injection_script)
+                        self.page.evaluate(injection_script)
                         self.debug_log("Solution injected into page", "SUCCESS")
                         
                         # Give the page time to process the solution
@@ -277,30 +278,96 @@ class MawaqitUploader:
             self.debug_log(f"Unexpected error in 2Captcha solver: {e}", "ERROR")
             return False
     
+    def trigger_2fa_resend(self) -> bool:
+        """Try to trigger a resend of the 2FA code"""
+        try:
+            resend_selectors = [
+                'button:has-text("Resend")',
+                'a:has-text("Resend")',
+                'button:has-text("Send again")',
+                'a:has-text("Send again")',
+                'button:has-text("Didn\'t receive")',
+                'a:has-text("Didn\'t receive")',
+                '[class*="resend"]'
+            ]
+            
+            for selector in resend_selectors:
+                elements = self.page.locator(selector)
+                if elements.count() > 0:
+                    for i in range(elements.count()):
+                        element = elements.nth(i)
+                        if element.is_visible():
+                            self.debug_log("Found resend button - clicking to trigger new code", "INFO")
+                            element.click()
+                            time.sleep(3)
+                            return True
+            
+            return False
+        except Exception as e:
+            self.debug_log(f"Error triggering resend: {e}", "WARNING")
+            return False
+    
     def get_2fa_code_from_email(self, max_wait_minutes: int = 5) -> Optional[str]:
-        """Enhanced email checker with better pattern matching"""
+        """Enhanced email checker with better pattern matching and debugging"""
+        
+        # Check if manual code is provided
+        if MANUAL_2FA_CODE:
+            self.debug_log(f"Using manual 2FA code: {MANUAL_2FA_CODE}", "INFO")
+            return MANUAL_2FA_CODE
+        
         self.debug_log("Checking Gmail for 2FA verification code...", "INFO")
         
+        # First, try to trigger a resend if possible
+        self.trigger_2fa_resend()
+        
         start_time = datetime.now()
-        check_interval = 15  # seconds
+        check_interval = 10  # Reduced to check more frequently
+        attempts = 0
         
         while (datetime.now() - start_time).total_seconds() < max_wait_minutes * 60:
+            attempts += 1
             try:
+                self.debug_log(f"Email check attempt {attempts}", "DEBUG")
+                
                 imap = imaplib.IMAP4_SSL("imap.gmail.com")
                 imap.login(self.gmail_user, self.gmail_app_password)
                 imap.select("inbox")
                 
-                # Search for recent Mawaqit emails
-                since_date = (datetime.now() - timedelta(minutes=10)).strftime("%d-%b-%Y")
-                search_criteria = f'(FROM "mawaqit" SINCE "{since_date}")'
+                # Try multiple search criteria
+                search_queries = [
+                    'FROM "mawaqit"',
+                    'FROM "noreply@mawaqit.net"',
+                    'SUBJECT "verification"',
+                    'SUBJECT "code"',
+                    'BODY "mawaqit"'
+                ]
                 
-                status, messages = imap.search(None, search_criteria)
+                all_mail_ids = []
                 
-                if status == 'OK' and messages[0]:
-                    mail_ids = messages[0].split()
+                for query in search_queries:
+                    try:
+                        # Search for emails from the last hour
+                        since_date = (datetime.now() - timedelta(hours=1)).strftime("%d-%b-%Y")
+                        search_criteria = f'({query} SINCE "{since_date}")'
+                        
+                        status, messages = imap.search(None, search_criteria)
+                        
+                        if status == 'OK' and messages[0]:
+                            mail_ids = messages[0].split()
+                            all_mail_ids.extend(mail_ids)
+                            self.debug_log(f"Found {len(mail_ids)} emails with query: {query}", "DEBUG")
+                    except Exception as e:
+                        self.debug_log(f"Search error with query {query}: {e}", "DEBUG")
+                        continue
+                
+                # Remove duplicates
+                all_mail_ids = list(set(all_mail_ids))
+                
+                if all_mail_ids:
+                    self.debug_log(f"Total unique emails to check: {len(all_mail_ids)}", "INFO")
                     
                     # Check most recent emails first
-                    for mail_id in reversed(mail_ids[-5:]):
+                    for mail_id in reversed(all_mail_ids[-10:]):
                         try:
                             status, msg_data = imap.fetch(mail_id, "(RFC822)")
                             if status != 'OK':
@@ -309,45 +376,75 @@ class MawaqitUploader:
                             raw_msg = msg_data[0][1]
                             msg = email.message_from_bytes(raw_msg)
                             
-                            # Check email age
-                            email_date = email.utils.parsedate_to_datetime(msg['Date'])
-                            age_minutes = (datetime.now(email_date.tzinfo) - email_date).total_seconds() / 60
+                            # Log email details for debugging
+                            from_addr = msg.get('From', '')
+                            subject = msg.get('Subject', '')
                             
-                            if age_minutes > 10:
+                            # Check if it's from Mawaqit
+                            if 'mawaqit' not in from_addr.lower() and 'mawaqit' not in subject.lower():
                                 continue
                             
-                            self.debug_log(f"Found recent Mawaqit email (age: {age_minutes:.1f} minutes)", "INFO")
+                            self.debug_log(f"Checking email - From: {from_addr}, Subject: {subject}", "DEBUG")
+                            
+                            # Check email age
+                            try:
+                                email_date = email.utils.parsedate_to_datetime(msg['Date'])
+                                age_minutes = (datetime.now(email_date.tzinfo) - email_date).total_seconds() / 60
+                                
+                                if age_minutes > 60:  # Skip emails older than 1 hour
+                                    self.debug_log(f"Email too old: {age_minutes:.1f} minutes", "DEBUG")
+                                    continue
+                                
+                                self.debug_log(f"Email age: {age_minutes:.1f} minutes", "INFO")
+                            except:
+                                pass
                             
                             # Extract body
                             body = self.extract_email_body(msg)
                             
-                            # Enhanced code patterns
+                            # Log part of the body for debugging
+                            if body:
+                                body_preview = body[:500].replace('\n', ' ')
+                                self.debug_log(f"Email body preview: {body_preview}", "DEBUG")
+                            
+                            # Enhanced code patterns - look for 6 consecutive digits
                             code_patterns = [
-                                r'\b(\d{6})\b',  # 6-digit code
-                                r'code[:\s]+(\d{6})',
-                                r'verification[:\s]+(\d{6})',
-                                r'OTP[:\s]+(\d{6})',
-                                r'PIN[:\s]+(\d{6})',
+                                r'(\d{6})',  # Any 6 digits
+                                r'code[:\s]*(\d{6})',
+                                r'verification[:\s]*(\d{6})',
+                                r'OTP[:\s]*(\d{6})',
+                                r'PIN[:\s]*(\d{6})',
+                                r'is[:\s]*(\d{6})',
+                                r':\s*(\d{6})',
                             ]
                             
                             for pattern in code_patterns:
-                                matches = re.findall(pattern, body, re.IGNORECASE)
+                                matches = re.findall(pattern, body, re.IGNORECASE | re.MULTILINE)
                                 if matches:
+                                    # Take the first 6-digit code found
                                     code = matches[0]
                                     self.debug_log(f"Found 2FA code: {code}", "SUCCESS")
                                     imap.close()
                                     imap.logout()
                                     return code
                             
+                            self.debug_log("No 6-digit code found in this email", "DEBUG")
+                            
                         except Exception as e:
                             self.debug_log(f"Error processing email: {e}", "WARNING")
                             continue
+                else:
+                    self.debug_log("No Mawaqit emails found in inbox", "DEBUG")
                 
                 imap.close()
                 imap.logout()
                 
                 elapsed = (datetime.now() - start_time).total_seconds()
                 if elapsed < max_wait_minutes * 60:
+                    # Try to trigger resend again after 30 seconds
+                    if attempts % 3 == 0:
+                        self.trigger_2fa_resend()
+                    
                     self.debug_log(f"No code found yet, waiting {check_interval} seconds... ({elapsed:.0f}s elapsed)", "INFO")
                     time.sleep(check_interval)
                 
@@ -356,6 +453,7 @@ class MawaqitUploader:
                 time.sleep(check_interval)
         
         self.debug_log("No 2FA code found within timeout period", "ERROR")
+        self.debug_log("TIP: You can set MANUAL_2FA_CODE environment variable to bypass email check", "INFO")
         return None
     
     def extract_email_body(self, msg) -> str:
@@ -371,8 +469,10 @@ class MawaqitUploader:
                         if payload:
                             text = payload.decode('utf-8', errors='ignore')
                             # Remove HTML tags if present
-                            text = re.sub(r'<[^>]+>', '', text)
-                            body += text
+                            text = re.sub(r'<[^>]+>', ' ', text)
+                            # Remove extra whitespace
+                            text = ' '.join(text.split())
+                            body += text + " "
                     except Exception:
                         continue
         else:
@@ -380,11 +480,144 @@ class MawaqitUploader:
                 payload = msg.get_payload(decode=True)
                 if payload:
                     body = payload.decode('utf-8', errors='ignore')
-                    body = re.sub(r'<[^>]+>', '', body)
+                    body = re.sub(r'<[^>]+>', ' ', body)
+                    body = ' '.join(body.split())
             except Exception:
                 pass
         
         return body
+    
+    def check_if_already_logged_in(self) -> bool:
+        """Check if we're already logged in"""
+        try:
+            current_url = self.page.url
+            if "backoffice" in current_url and "login" not in current_url:
+                self.debug_log("Already logged in!", "SUCCESS")
+                return True
+            return False
+        except:
+            return False
+    
+    def perform_login(self) -> bool:
+        """Perform login with reCAPTCHA and 2FA handling"""
+        self.debug_log("Starting login process", "INFO")
+        
+        try:
+            # Navigate to login page
+            self.page.goto("https://mawaqit.net/en/backoffice/login", wait_until="domcontentloaded")
+            self.wait_for_page_load()
+            
+            # Check if already logged in
+            if self.check_if_already_logged_in():
+                return True
+            
+            self.save_debug_screenshot("login_page")
+            
+            # Fill credentials
+            self.debug_log("Filling login credentials", "INFO")
+            email_input = self.page.locator('input[type="email"], input[name="email"], #email')
+            password_input = self.page.locator('input[type="password"], input[name="password"], #password')
+            
+            if email_input.count() == 0 or password_input.count() == 0:
+                self.debug_log("Login form fields not found", "ERROR")
+                return False
+            
+            email_input.first.fill(self.mawaqit_email)
+            password_input.first.fill(self.mawaqit_password)
+            
+            # Check for reCAPTCHA
+            has_recaptcha, site_key = self.detect_recaptcha()
+            
+            if has_recaptcha:
+                self.debug_log("reCAPTCHA detected - solving with 2Captcha", "INFO")
+                if not self.solve_recaptcha_with_2captcha(site_key):
+                    self.debug_log("Failed to solve reCAPTCHA", "ERROR")
+                    return False
+                # Don't click submit here - solver will auto-submit if possible
+                time.sleep(3)
+            else:
+                # No reCAPTCHA - submit normally
+                self.debug_log("No reCAPTCHA detected - submitting form", "INFO")
+                submit_button = self.page.locator('button[type="submit"], input[type="submit"]').first
+                submit_button.click()
+            
+            # Wait for response
+            time.sleep(5)
+            self.wait_for_page_load()
+            
+            # Check if login was successful without 2FA
+            if self.check_if_already_logged_in():
+                return True
+            
+            # Check if we need 2FA
+            page_content = self.page.content().lower()
+            current_url = self.page.url.lower()
+            
+            if any(keyword in page_content for keyword in ["verification", "code", "2fa", "two-factor", "authenticate"]):
+                self.debug_log("2FA verification required", "INFO")
+                self.save_debug_screenshot("2fa_page")
+                
+                # Get code from email
+                verification_code = self.get_2fa_code_from_email()
+                
+                if not verification_code:
+                    self.debug_log("Could not retrieve 2FA code", "ERROR")
+                    self.debug_log("Please check your email manually or set MANUAL_2FA_CODE environment variable", "INFO")
+                    return False
+                
+                # Enter 2FA code
+                code_input_selectors = [
+                    'input[placeholder*="code" i]',
+                    'input[name*="code" i]',
+                    'input[name*="verification" i]',
+                    'input[name*="otp" i]',
+                    'input[name*="token" i]',
+                    'input[type="text"]:not([type="email"]):not([type="password"])',
+                    'input[type="number"]',
+                    'input[maxlength="6"]'
+                ]
+                
+                code_entered = False
+                for selector in code_input_selectors:
+                    try:
+                        elements = self.page.locator(selector)
+                        if elements.count() > 0:
+                            for i in range(elements.count()):
+                                element = elements.nth(i)
+                                if element.is_visible():
+                                    element.fill("")  # Clear first
+                                    element.type(verification_code, delay=100)  # Type slowly
+                                    code_entered = True
+                                    self.debug_log("2FA code entered", "SUCCESS")
+                                    break
+                            if code_entered:
+                                break
+                    except Exception:
+                        continue
+                
+                if not code_entered:
+                    self.debug_log("Could not find 2FA input field", "ERROR")
+                    return False
+                
+                # Submit 2FA
+                time.sleep(1)
+                submit_button = self.page.locator('button[type="submit"], input[type="submit"]').first
+                submit_button.click()
+                time.sleep(5)
+                self.wait_for_page_load()
+            
+            # Final check for login success
+            if self.check_if_already_logged_in():
+                self.save_debug_screenshot("logged_in")
+                return True
+            else:
+                self.debug_log("Login failed - not in backoffice", "ERROR")
+                self.save_debug_screenshot("login_failed")
+                return False
+                
+        except Exception as e:
+            self.debug_log(f"Login error: {e}", "ERROR")
+            return False
     
     def read_prayer_times_csv(self) -> Optional[Dict]:
         """Read prayer times from CSV files"""
@@ -561,112 +794,6 @@ class MawaqitUploader:
         
         return True
     
-    def perform_login(self) -> bool:
-        """Perform login with reCAPTCHA and 2FA handling"""
-        self.debug_log("Starting login process", "INFO")
-        
-        try:
-            # Navigate to login page
-            self.page.goto("https://mawaqit.net/en/backoffice/login", wait_until="domcontentloaded")
-            self.wait_for_page_load()
-            self.save_debug_screenshot("login_page")
-            
-            # Fill credentials
-            self.debug_log("Filling login credentials", "INFO")
-            email_input = self.page.locator('input[type="email"], input[name="email"], #email')
-            password_input = self.page.locator('input[type="password"], input[name="password"], #password')
-            
-            if email_input.count() == 0 or password_input.count() == 0:
-                self.debug_log("Login form fields not found", "ERROR")
-                return False
-            
-            email_input.first.fill(self.mawaqit_email)
-            password_input.first.fill(self.mawaqit_password)
-            
-            # Check for reCAPTCHA
-            has_recaptcha, site_key = self.detect_recaptcha()
-            
-            if has_recaptcha:
-                self.debug_log("reCAPTCHA detected - solving with 2Captcha", "INFO")
-                if not self.solve_recaptcha_with_2captcha(site_key):
-                    self.debug_log("Failed to solve reCAPTCHA", "ERROR")
-                    return False
-                # Don't click submit here - solver will auto-submit if possible
-                time.sleep(3)
-            else:
-                # No reCAPTCHA - submit normally
-                self.debug_log("No reCAPTCHA detected - submitting form", "INFO")
-                submit_button = self.page.locator('button[type="submit"], input[type="submit"]').first
-                submit_button.click()
-            
-            # Wait for response
-            time.sleep(5)
-            self.wait_for_page_load()
-            
-            # Check if we need 2FA
-            page_content = self.page.content().lower()
-            current_url = self.page.url.lower()
-            
-            if "verification" in page_content or "code" in page_content or "2fa" in current_url:
-                self.debug_log("2FA verification required", "INFO")
-                self.save_debug_screenshot("2fa_page")
-                
-                # Get code from email
-                verification_code = self.get_2fa_code_from_email()
-                
-                if not verification_code:
-                    self.debug_log("Could not retrieve 2FA code", "ERROR")
-                    return False
-                
-                # Enter 2FA code
-                code_input_selectors = [
-                    'input[placeholder*="code" i]',
-                    'input[name*="code" i]',
-                    'input[name*="verification" i]',
-                    'input[type="text"]:not([type="email"]):not([type="password"])',
-                    'input[type="number"]'
-                ]
-                
-                code_entered = False
-                for selector in code_input_selectors:
-                    try:
-                        elements = self.page.locator(selector)
-                        if elements.count() > 0:
-                            for i in range(elements.count()):
-                                element = elements.nth(i)
-                                if element.is_visible():
-                                    element.fill(verification_code)
-                                    code_entered = True
-                                    self.debug_log("2FA code entered", "SUCCESS")
-                                    break
-                            if code_entered:
-                                break
-                    except Exception:
-                        continue
-                
-                if not code_entered:
-                    self.debug_log("Could not find 2FA input field", "ERROR")
-                    return False
-                
-                # Submit 2FA
-                self.page.locator('button[type="submit"], input[type="submit"]').first.click()
-                time.sleep(5)
-                self.wait_for_page_load()
-            
-            # Verify login success
-            if "backoffice" in self.page.url and "login" not in self.page.url:
-                self.debug_log("Login successful!", "SUCCESS")
-                self.save_debug_screenshot("logged_in")
-                return True
-            else:
-                self.debug_log("Login failed - still on login page", "ERROR")
-                self.save_debug_screenshot("login_failed")
-                return False
-                
-        except Exception as e:
-            self.debug_log(f"Login error: {e}", "ERROR")
-            return False
-    
     def navigate_to_prayer_times_config(self) -> bool:
         """Navigate to prayer times configuration"""
         self.debug_log("Navigating to prayer times configuration", "INFO")
@@ -775,7 +902,7 @@ class MawaqitUploader:
     
     def run(self) -> bool:
         """Main execution method"""
-        self.debug_log("Starting Mawaqit Prayer Times Uploader v3.0", "INFO")
+        self.debug_log("Starting Mawaqit Prayer Times Uploader v3.1", "INFO")
         self.debug_log("=" * 60, "INFO")
         
         # Validate prayer times exist
@@ -866,8 +993,8 @@ def main():
     """Main entry point"""
     print("""
     ╔══════════════════════════════════════════════════════════╗
-    ║       Mawaqit Prayer Times Uploader v3.0                 ║
-    ║       Enhanced with Smart reCAPTCHA & 2FA Handling       ║
+    ║       Mawaqit Prayer Times Uploader v3.1                 ║
+    ║       Enhanced 2FA Email Detection & Manual Override     ║
     ╚══════════════════════════════════════════════════════════╝
     """)
     
@@ -881,7 +1008,17 @@ def main():
     
     print(f"✅ Environment validated")
     print(f"📁 Prayer times directory: {prayer_times_dir}")
-    print(f"🌐 2Captcha API configured")
+    
+    if TWOCAPTCHA_API_KEY:
+        print(f"🌐 2Captcha API configured")
+    else:
+        print(f"⚠️  2Captcha API key not set - will fail if reCAPTCHA present")
+    
+    if MANUAL_2FA_CODE:
+        print(f"🔑 Manual 2FA code provided: {MANUAL_2FA_CODE}")
+    else:
+        print(f"📧 Will retrieve 2FA code from Gmail")
+    
     print("-" * 60)
     
     # Create uploader instance
@@ -919,7 +1056,13 @@ def main():
     else:
         print("❌ FAILED: Could not complete the upload process")
         print("📸 Check debug screenshots for troubleshooting")
-        print("📧 Verify your credentials and 2FA email access")
+        print("\n📝 TROUBLESHOOTING TIPS:")
+        print("1. Check if 2FA emails are being sent to your Gmail")
+        print("2. Try setting MANUAL_2FA_CODE environment variable:")
+        print("   export MANUAL_2FA_CODE='123456'")
+        print("3. Ensure Gmail app password is correct")
+        print("4. Check spam/promotions folders for Mawaqit emails")
+        print("5. Try logging in manually to trigger email, then run script")
         return 1
 
 

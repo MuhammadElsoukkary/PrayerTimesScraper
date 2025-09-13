@@ -498,6 +498,19 @@ class MawaqitUploader:
         except:
             return False
     
+    def check_if_on_admin_page(self) -> bool:
+        """Check if the script is on the Admin page after login"""
+        try:
+            # Look for specific elements or text unique to the Admin page
+            admin_header = self.page.locator('h2:has-text("Admin")')
+            if admin_header.count() > 0:
+                self.debug_log("Successfully reached Admin page", "SUCCESS")
+                return True
+            return False
+        except Exception as e:
+            self.debug_log(f"Error checking Admin page: {e}", "ERROR")
+            return False
+    
     def perform_login(self) -> bool:
         """Perform login with reCAPTCHA and 2FA handling"""
         self.debug_log("Starting login process", "INFO")
@@ -507,8 +520,8 @@ class MawaqitUploader:
             self.page.goto("https://mawaqit.net/en/backoffice/login", wait_until="domcontentloaded")
             self.wait_for_page_load()
             
-            # Check if already logged in
-            if self.check_if_already_logged_in():
+            # Check if already logged in or on Admin page
+            if self.check_if_already_logged_in() or self.check_if_on_admin_page():
                 return True
             
             self.save_debug_screenshot("login_page")
@@ -546,7 +559,7 @@ class MawaqitUploader:
             self.wait_for_page_load()
             
             # Check if login was successful without 2FA
-            if self.check_if_already_logged_in():
+            if self.check_if_already_logged_in() or self.check_if_on_admin_page():
                 return True
             
             # Check if we need 2FA
@@ -607,7 +620,7 @@ class MawaqitUploader:
                 self.wait_for_page_load()
             
             # Final check for login success
-            if self.check_if_already_logged_in():
+            if self.check_if_already_logged_in() or self.check_if_on_admin_page():
                 self.save_debug_screenshot("logged_in")
                 return True
             else:
@@ -803,7 +816,8 @@ class MawaqitUploader:
             'button:has-text("Actions")',
             '.btn:has-text("Actions")',
             'a:has-text("Actions")',
-            '[class*="dropdown-toggle"]:has-text("Actions")'
+            '[class*="dropdown-toggle"]:has-text("Actions")',
+            'button[data-toggle="dropdown"]:has-text("Actions")'
         ]
         
         if not self.smart_click(actions_selectors, "Actions button"):
@@ -814,7 +828,8 @@ class MawaqitUploader:
             'a:has-text("Configure")',
             '.dropdown-item:has-text("Configure")',
             '[href*="/configure"]',
-            'li:has-text("Configure") a'
+            'li:has-text("Configure") a',
+            'a[href*="configure"]:has-text("Configure")'
         ]
         
         if not self.smart_click(configure_selectors, "Configure option"):
@@ -1068,3 +1083,5 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
+
+

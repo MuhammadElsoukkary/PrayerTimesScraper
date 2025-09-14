@@ -256,6 +256,7 @@ class MawaqitUploader:
                         except Exception as e:
                             self.debug_log(f"Could not auto-submit: {e}", "DEBUG")
                         
+                        self.debug_log("reCAPTCHA process completed successfully!", "SUCCESS")
                         return True
                         
                     elif result.get('status') == 0:
@@ -309,30 +310,29 @@ class MawaqitUploader:
     
     def get_2fa_code_from_email(self, max_wait_minutes: int = 5) -> Optional[str]:
         """Enhanced email checker with better pattern matching and debugging"""
-        
         # Check if manual code is provided
         if MANUAL_2FA_CODE:
             self.debug_log(f"Using manual 2FA code: {MANUAL_2FA_CODE}", "INFO")
             return MANUAL_2FA_CODE
-        
+
         self.debug_log("Checking Gmail for 2FA verification code...", "INFO")
-        
+
         # First, try to trigger a resend if possible
         self.trigger_2fa_resend()
-        
+
         start_time = datetime.now()
         check_interval = 10  # Reduced to check more frequently
         attempts = 0
-        
+
         while (datetime.now() - start_time).total_seconds() < max_wait_minutes * 60:
             attempts += 1
             try:
                 self.debug_log(f"Email check attempt {attempts}", "DEBUG")
-                
+
                 imap = imaplib.IMAP4_SSL("imap.gmail.com")
                 imap.login(self.gmail_user, self.gmail_app_password)
                 imap.select("inbox")
-                
+
                 # Try multiple search criteria
                 search_queries = [
                     'FROM "mawaqit"',
@@ -341,17 +341,17 @@ class MawaqitUploader:
                     'SUBJECT "code"',
                     'BODY "mawaqit"'
                 ]
-                
+
                 all_mail_ids = []
-                
+
                 for query in search_queries:
                     try:
                         # Search for emails from the last hour
                         since_date = (datetime.now() - timedelta(hours=1)).strftime("%d-%b-%Y")
                         search_criteria = f'({query} SINCE "{since_date}")'
-                        
+
                         status, messages = imap.search(None, search_criteria)
-                        
+
                         if status == 'OK' and messages[0]:
                             mail_ids = messages[0].split()
                             all_mail_ids.extend(mail_ids)
@@ -359,54 +359,54 @@ class MawaqitUploader:
                     except Exception as e:
                         self.debug_log(f"Search error with query {query}: {e}", "DEBUG")
                         continue
-                
+
                 # Remove duplicates
                 all_mail_ids = list(set(all_mail_ids))
-                
+
                 if all_mail_ids:
                     self.debug_log(f"Total unique emails to check: {len(all_mail_ids)}", "INFO")
-                    
+
                     # Check most recent emails first
                     for mail_id in reversed(all_mail_ids[-10:]):
                         try:
                             status, msg_data = imap.fetch(mail_id, "(RFC822)")
                             if status != 'OK':
                                 continue
-                            
+
                             raw_msg = msg_data[0][1]
                             msg = email.message_from_bytes(raw_msg)
-                            
+
                             # Log email details for debugging
                             from_addr = msg.get('From', '')
                             subject = msg.get('Subject', '')
-                            
+
                             # Check if it's from Mawaqit
                             if 'mawaqit' not in from_addr.lower() and 'mawaqit' not in subject.lower():
                                 continue
-                            
+
                             self.debug_log(f"Checking email - From: {from_addr}, Subject: {subject}", "DEBUG")
-                            
+
                             # Check email age
                             try:
                                 email_date = email.utils.parsedate_to_datetime(msg['Date'])
                                 age_minutes = (datetime.now(email_date.tzinfo) - email_date).total_seconds() / 60
-                                
+
                                 if age_minutes > 60:  # Skip emails older than 1 hour
                                     self.debug_log(f"Email too old: {age_minutes:.1f} minutes", "DEBUG")
                                     continue
-                                
+
                                 self.debug_log(f"Email age: {age_minutes:.1f} minutes", "INFO")
                             except:
                                 pass
-                            
+
                             # Extract body
                             body = self.extract_email_body(msg)
-                            
+
                             # Log part of the body for debugging
                             if body:
                                 body_preview = body[:500].replace('\n', ' ')
                                 self.debug_log(f"Email body preview: {body_preview}", "DEBUG")
-                            
+
                             # Enhanced code patterns - look for 6 consecutive digits
                             code_patterns = [
                                 r'(\d{6})',  # Any 6 digits
@@ -417,7 +417,7 @@ class MawaqitUploader:
                                 r'is[:\s]*(\d{6})',
                                 r':\s*(\d{6})',
                             ]
-                            
+
                             for pattern in code_patterns:
                                 matches = re.findall(pattern, body, re.IGNORECASE | re.MULTILINE)
                                 if matches:
@@ -427,31 +427,31 @@ class MawaqitUploader:
                                     imap.close()
                                     imap.logout()
                                     return code
-                            
+
                             self.debug_log("No 6-digit code found in this email", "DEBUG")
-                            
+
                         except Exception as e:
                             self.debug_log(f"Error processing email: {e}", "WARNING")
                             continue
                 else:
                     self.debug_log("No Mawaqit emails found in inbox", "DEBUG")
-                
+
                 imap.close()
                 imap.logout()
-                
+
                 elapsed = (datetime.now() - start_time).total_seconds()
                 if elapsed < max_wait_minutes * 60:
                     # Try to trigger resend again after 30 seconds
                     if attempts % 3 == 0:
                         self.trigger_2fa_resend()
-                    
+
                     self.debug_log(f"No code found yet, waiting {check_interval} seconds... ({elapsed:.0f}s elapsed)", "INFO")
                     time.sleep(check_interval)
-                
+
             except Exception as e:
                 self.debug_log(f"Error checking email: {e}", "ERROR")
                 time.sleep(check_interval)
-        
+
         self.debug_log("No 2FA code found within timeout period", "ERROR")
         self.debug_log("TIP: You can set MANUAL_2FA_CODE environment variable to bypass email check", "INFO")
         return None
@@ -919,16 +919,16 @@ class MawaqitUploader:
         """Main execution method"""
         self.debug_log("Starting Mawaqit Prayer Times Uploader v3.1", "INFO")
         self.debug_log("=" * 60, "INFO")
-        
+
         # Validate prayer times exist
         prayer_times = self.read_prayer_times_csv()
         if not prayer_times:
             return False
-        
+
         # Determine browser mode
         is_headless = bool(os.getenv('CI')) or bool(os.getenv('GITHUB_ACTIONS'))
         self.debug_log(f"Browser mode: {'headless' if is_headless else 'headed'}", "INFO")
-        
+
         try:
             with sync_playwright() as p:
                 # Launch browser with optimized settings
@@ -941,46 +941,49 @@ class MawaqitUploader:
                         '--disable-setuid-sandbox'
                     ]
                 )
-                
+
                 # Create context with realistic viewport
                 self.context = self.browser.new_context(
                     viewport={'width': 1920, 'height': 1080},
                     user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 )
-                
+
                 # Create page
                 self.page = self.context.new_page()
-                
+
                 # Set default timeout
                 self.page.set_default_timeout(30000)
-                
+
                 # Perform login
                 if not self.perform_login():
                     self.debug_log("Login failed", "ERROR")
                     return False
-                
+
                 # Navigate to configuration
                 if not self.navigate_to_prayer_times_config():
                     self.debug_log("Failed to navigate to configuration", "ERROR")
                     return False
-                
+
                 # Upload prayer times
                 if not self.upload_monthly_times():
                     self.debug_log("Failed to upload prayer times", "ERROR")
                     return False
-                
+
                 self.debug_log("Process completed successfully!", "SUCCESS")
                 return True
-                
+
         except Exception as e:
             self.debug_log(f"Unexpected error: {e}", "ERROR")
             self.save_debug_screenshot("error_state")
             return False
-            
+
         finally:
             if self.browser:
                 self.debug_log("Closing browser", "INFO")
-                self.browser.close()
+                try:
+                    self.browser.close()
+                except Exception as e:
+                    self.debug_log(f"Error closing browser: {e}", "WARNING")
 
 
 def validate_environment() -> Tuple[bool, Dict[str, str]]:

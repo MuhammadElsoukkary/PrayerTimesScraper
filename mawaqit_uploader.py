@@ -731,7 +731,7 @@ class MawaqitUploader:
                             'athan': {
                                 'fajr': row.get('Fajr', ''),
                                 'dhuhr': row.get('Dhuhr', ''),
-                                'asr'asr': row.get('Asr', ''),
+                                'asr': row.get('Asr', ''),
                                 'maghrib': row.get('Maghrib', ''),
                                 'isha': row.get('Isha', '')
                             },

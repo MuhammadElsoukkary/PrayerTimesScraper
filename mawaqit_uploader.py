@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Enhanced Mawaqit Prayer Times Uploader v3.1
-- Fixed 2FA email detection with improved search criteria
-- Added manual 2FA code input option
-- Better email debugging
-- Option to skip 2FA if not required
+Enhanced Mawaqit Prayer Times Uploader v3.2
+- Fixed login detection after 2FA
+- Improved browser cleanup to prevent "Event loop closed" errors
+- Better wait times after 2FA submission
 """
 
 import imaplib
@@ -488,27 +487,83 @@ class MawaqitUploader:
         return body
     
     def check_if_already_logged_in(self) -> bool:
-        """Check if we're already logged in"""
+        """Check if we're already logged in - improved detection"""
         try:
             current_url = self.page.url
+            self.debug_log(f"Current URL: {current_url}", "DEBUG")
+            
+            # Check URL patterns
             if "backoffice" in current_url and "login" not in current_url:
-                self.debug_log("Already logged in!", "SUCCESS")
+                self.debug_log("Detected logged in via URL check", "SUCCESS")
                 return True
+                
+            # Check for logout button or user menu (indicators of being logged in)
+            logged_in_indicators = [
+                'a:has-text("Logout")',
+                'a:has-text("Sign out")',
+                'button:has-text("Logout")',
+                '.user-menu',
+                '[class*="logout"]',
+                'a[href*="logout"]',
+                '.navbar .user',
+                '[class*="user-profile"]'
+            ]
+            
+            for indicator in logged_in_indicators:
+                if self.page.locator(indicator).count() > 0:
+                    self.debug_log(f"Detected logged in via: {indicator}", "SUCCESS")
+                    return True
+            
+            # Check if login form is NOT present
+            login_form_elements = self.page.locator('input[type="email"], input[name="email"]')
+            if login_form_elements.count() == 0:
+                self.debug_log("No login form found - likely logged in", "SUCCESS")
+                return True
+                
             return False
-        except:
+        except Exception as e:
+            self.debug_log(f"Error checking login status: {e}", "WARNING")
             return False
     
     def check_if_on_admin_page(self) -> bool:
-        """Check if the script is on the Admin page after login"""
+        """Check if on the admin/backoffice page - improved detection"""
         try:
-            # Look for specific elements or text unique to the Admin page
-            admin_header = self.page.locator('h2:has-text("Admin")')
-            if admin_header.count() > 0:
-                self.debug_log("Successfully reached Admin page", "SUCCESS")
-                return True
+            current_url = self.page.url
+            
+            # Check URL patterns
+            admin_url_patterns = [
+                'backoffice',
+                'admin',
+                'dashboard',
+                'mosque'
+            ]
+            
+            for pattern in admin_url_patterns:
+                if pattern in current_url and 'login' not in current_url:
+                    self.debug_log(f"On admin page (URL contains: {pattern})", "SUCCESS")
+                    return True
+            
+            # Check for admin page elements
+            admin_indicators = [
+                'h1:has-text("Admin")',
+                'h2:has-text("Admin")',
+                '.admin-panel',
+                '.dashboard',
+                'button:has-text("Actions")',
+                '.mosque-admin',
+                '[class*="admin-"]',
+                'nav.admin',
+                '.admin-header'
+            ]
+            
+            for indicator in admin_indicators:
+                if self.page.locator(indicator).count() > 0:
+                    self.debug_log(f"On admin page (found: {indicator})", "SUCCESS")
+                    return True
+                    
             return False
         except Exception as e:
-            self.debug_log(f"Error checking Admin page: {e}", "ERROR")
+            self.debug_log(f"Error checking admin page: {e}", "WARNING")
             return False
     
     def perform_login(self) -> bool:
@@ -616,8 +671,23 @@ class MawaqitUploader:
                 time.sleep(1)
                 submit_button = self.page.locator('button[type="submit"], input[type="submit"]').first
                 submit_button.click()
-                time.sleep(5)
+                
+                # Wait longer for 2FA processing
+                self.debug_log("Waiting for 2FA to process...", "INFO")
+                time.sleep(10)  # Increased from 5 to 10 seconds
+                
+                # Wait for navigation
+                try:
+                    self.page.wait_for_url(lambda url: "login" not in url, timeout=15000)
+                    self.debug_log("Successfully navigated away from login page", "SUCCESS")
+                except:
+                    self.debug_log("URL did not change, checking login status anyway", "WARNING")
+                
                 self.wait_for_page_load()
+                self.save_debug_screenshot("after_2fa_submit")
+                
+                # Check page content for clues
+                self.debug_log(f"Page title: {self.page.title()}", "DEBUG")
             
             # Final check for login success
             if self.check_if_already_logged_in() or self.check_if_on_admin_page():
@@ -661,7 +731,7 @@ class MawaqitUploader:
                             'athan': {
                                 'fajr': row.get('Fajr', ''),
                                 'dhuhr': row.get('Dhuhr', ''),
-                                'asr': row.get('Asr', ''),
+                                'asr'asr': row.get('Asr', ''),
                                 'maghrib': row.get('Maghrib', ''),
                                 'isha': row.get('Isha', '')
                             },
@@ -878,14 +948,16 @@ class MawaqitUploader:
         if not self.upload_csv_file('athan'):
             return False
         
-        # Navigate to Iqama tab
+        # Navigate to Iqama tab - improved selectors
         iqama_selectors = [
-            'text="Iqama"',
             'a:has-text("Iqama")',
+            'button:has-text("Iqama")',
             '.nav-link:has-text("Iqama")',
             '.tab:has-text("Iqama")',
-            'button:has-text("Iqama")',
-            '[href*="iqama"]'
+            '[href*="iqama"]',
+            'text="Iqama"',
+            '.nav-tabs a:has-text("Iqama")',
+            'ul.nav li a:has-text("Iqama")'
         ]
         
         if not self.smart_click(iqama_selectors, "Iqama tab"):
@@ -893,11 +965,11 @@ class MawaqitUploader:
         
         # Click "By calendar" for Iqama
         calendar_selectors = [
-            'text="By calendar"',
             'a:has-text("By calendar")',
-            '.nav-link:has-text("By calendar")',
             'button:has-text("By calendar")',
-            '[href*="calendar"]'
+            '.nav-link:has-text("By calendar")',
+            '[href*="calendar"]',
+            'text="By calendar"'
         ]
         
         if not self.smart_click(calendar_selectors, "By calendar option"):
@@ -916,8 +988,8 @@ class MawaqitUploader:
         return True
     
     def run(self) -> bool:
-        """Main execution method"""
-        self.debug_log("Starting Mawaqit Prayer Times Uploader v3.1", "INFO")
+        """Main execution method with improved error handling"""
+        self.debug_log("Starting Mawaqit Prayer Times Uploader v3.2", "INFO")
         self.debug_log("=" * 60, "INFO")
 
         # Validate prayer times exist
@@ -929,61 +1001,85 @@ class MawaqitUploader:
         is_headless = bool(os.getenv('CI')) or bool(os.getenv('GITHUB_ACTIONS'))
         self.debug_log(f"Browser mode: {'headless' if is_headless else 'headed'}", "INFO")
 
+        playwright_instance = None
+        
         try:
-            with sync_playwright() as p:
-                # Launch browser with optimized settings
-                self.browser = p.chromium.launch(
-                    headless=is_headless,
-                    args=[
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-dev-shm-usage',
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox'
-                    ]
-                )
+            playwright_instance = sync_playwright().start()
+            
+            # Launch browser with optimized settings
+            self.browser = playwright_instance.chromium.launch(
+                headless=is_headless,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox'
+                ]
+            )
 
-                # Create context with realistic viewport
-                self.context = self.browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                )
+            # Create context with realistic viewport
+            self.context = self.browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
 
-                # Create page
-                self.page = self.context.new_page()
+            # Create page
+            self.page = self.context.new_page()
 
-                # Set default timeout
-                self.page.set_default_timeout(30000)
+            # Set default timeout
+            self.page.set_default_timeout(30000)
 
-                # Perform login
-                if not self.perform_login():
-                    self.debug_log("Login failed", "ERROR")
-                    return False
+            # Perform login
+            if not self.perform_login():
+                self.debug_log("Login failed", "ERROR")
+                return False
 
-                # Navigate to configuration
-                if not self.navigate_to_prayer_times_config():
-                    self.debug_log("Failed to navigate to configuration", "ERROR")
-                    return False
+            # Navigate to configuration
+            if not self.navigate_to_prayer_times_config():
+                self.debug_log("Failed to navigate to configuration", "ERROR")
+                return False
 
-                # Upload prayer times
-                if not self.upload_monthly_times():
-                    self.debug_log("Failed to upload prayer times", "ERROR")
-                    return False
+            # Upload prayer times
+            if not self.upload_monthly_times():
+                self.debug_log("Failed to upload prayer times", "ERROR")
+                return False
 
-                self.debug_log("Process completed successfully!", "SUCCESS")
-                return True
+            self.debug_log("Process completed successfully!", "SUCCESS")
+            return True
 
         except Exception as e:
             self.debug_log(f"Unexpected error: {e}", "ERROR")
+            import traceback
+            self.debug_log(f"Traceback: {traceback.format_exc()}", "DEBUG")
             self.save_debug_screenshot("error_state")
             return False
 
         finally:
-            if self.browser:
-                self.debug_log("Closing browser", "INFO")
-                try:
+            # Proper cleanup
+            try:
+                if self.page:
+                    self.page.close()
+            except:
+                pass
+                
+            try:
+                if self.context:
+                    self.context.close()
+            except:
+                pass
+                
+            try:
+                if self.browser:
                     self.browser.close()
-                except Exception as e:
-                    self.debug_log(f"Error closing browser: {e}", "WARNING")
+                    self.debug_log("Browser closed", "INFO")
+            except:
+                pass
+                
+            try:
+                if playwright_instance:
+                    playwright_instance.stop()
+            except:
+                pass
 
 
 def validate_environment() -> Tuple[bool, Dict[str, str]]:
@@ -1008,11 +1104,11 @@ def validate_environment() -> Tuple[bool, Dict[str, str]]:
 
 
 def main():
-    """Main entry point"""
+    """Main entry point with improved retry logic"""
     print("""
     ╔══════════════════════════════════════════════════════════╗
-    ║       Mawaqit Prayer Times Uploader v3.1                 ║
-    ║       Enhanced 2FA Email Detection & Manual Override     ║
+    ║       Mawaqit Prayer Times Uploader v3.2                 ║
+    ║       Fixed Login Detection & Browser Cleanup            ║
     ╚══════════════════════════════════════════════════════════╝
     """)
     
@@ -1039,16 +1135,7 @@ def main():
     
     print("-" * 60)
     
-    # Create uploader instance
-    uploader = MawaqitUploader(
-        mawaqit_email=env_vars['MAWAQIT_USER'],
-        mawaqit_password=env_vars['MAWAQIT_PASS'],
-        gmail_user=env_vars['GMAIL_USER'],
-        gmail_app_password=env_vars['GMAIL_APP_PASSWORD'],
-        prayer_times_dir=prayer_times_dir
-    )
-    
-    # Run the upload process
+    # Run the upload process with retries
     success = False
     for attempt in range(MAX_RETRIES):
         if attempt > 0:
@@ -1056,14 +1143,26 @@ def main():
             time.sleep(5)
         
         try:
+            # Create NEW uploader instance for each attempt
+            uploader = MawaqitUploader(
+                mawaqit_email=env_vars['MAWAQIT_USER'],
+                mawaqit_password=env_vars['MAWAQIT_PASS'],
+                gmail_user=env_vars['GMAIL_USER'],
+                gmail_app_password=env_vars['GMAIL_APP_PASSWORD'],
+                prayer_times_dir=prayer_times_dir
+            )
+            
             success = uploader.run()
             if success:
                 break
+                
         except KeyboardInterrupt:
             print("\n⚠️ Process interrupted by user")
             return 130
         except Exception as e:
             print(f"❌ Attempt {attempt + 1} failed: {e}")
+            import traceback
+            print(traceback.format_exc())
     
     # Final result
     print("\n" + "=" * 60)
@@ -1074,17 +1173,8 @@ def main():
     else:
         print("❌ FAILED: Could not complete the upload process")
         print("📸 Check debug screenshots for troubleshooting")
-        print("\n📝 TROUBLESHOOTING TIPS:")
-        print("1. Check if 2FA emails are being sent to your Gmail")
-        print("2. Try setting MANUAL_2FA_CODE environment variable:")
-        print("   export MANUAL_2FA_CODE='123456'")
-        print("3. Ensure Gmail app password is correct")
-        print("4. Check spam/promotions folders for Mawaqit emails")
-        print("5. Try logging in manually to trigger email, then run script")
         return 1
 
 
 if __name__ == "__main__":
     exit(main())
-
-

@@ -487,43 +487,79 @@ class MawaqitUploader:
         return body
     
     def check_if_already_logged_in(self) -> bool:
-        """Check if we're already logged in - improved detection"""
-        try:
+    """Check if we're already logged in - improved detection"""
+    try:
+        current_url = self.page.url
+        self.debug_log(f"Current URL: {current_url}", "DEBUG")
+        
+        # First check: if we're still on the login page URL, we're NOT logged in
+        if "login" in current_url:
+            self.debug_log("Still on login page URL", "DEBUG")
+            
+            # Double check - maybe we're on a post-login redirect
+            # Wait a moment and check again
+            time.sleep(2)
             current_url = self.page.url
-            self.debug_log(f"Current URL: {current_url}", "DEBUG")
-            
-            # Check URL patterns
-            if "backoffice" in current_url and "login" not in current_url:
-                self.debug_log("Detected logged in via URL check", "SUCCESS")
-                return True
-                
-            # Check for logout button or user menu (indicators of being logged in)
-            logged_in_indicators = [
-                'a:has-text("Logout")',
-                'a:has-text("Sign out")',
-                'button:has-text("Logout")',
-                '.user-menu',
-                '[class*="logout"]',
-                'a[href*="logout"]',
-                '.navbar .user',
-                '[class*="user-profile"]'
-            ]
-            
-            for indicator in logged_in_indicators:
+            if "login" in current_url:
+                self.debug_log("Confirmed: still on login page", "DEBUG")
+                return False
+        
+        # Check URL patterns that indicate we're logged in
+        if "backoffice" in current_url and "login" not in current_url:
+            self.debug_log("Detected logged in via URL check", "SUCCESS")
+            return True
+        
+        # Check for elements that only appear when logged in
+        logged_in_indicators = [
+            'a:has-text("Logout")',
+            'a:has-text("Sign out")',
+            'button:has-text("Logout")',
+            'button:has-text("Actions")',  # This appears on admin page
+            '.user-menu',
+            '[class*="logout"]',
+            'a[href*="logout"]',
+            '.navbar .user',
+            '[class*="user-profile"]',
+            '.admin-panel',
+            '.dashboard'
+        ]
+        
+        for indicator in logged_in_indicators:
+            try:
                 if self.page.locator(indicator).count() > 0:
                     self.debug_log(f"Detected logged in via: {indicator}", "SUCCESS")
                     return True
+            except:
+                continue
+        
+        # Check if login form IS present (means we're NOT logged in)
+        login_indicators = [
+            'input[type="email"]',
+            'input[name="email"]',
+            'input[name="username"]',
+            'form[action*="login"]',
+            'button:has-text("Sign in")',
+            'button:has-text("Log in")',
+            'button:has-text("Login")'
+        ]
+        
+        for indicator in login_indicators:
+            try:
+                if self.page.locator(indicator).count() > 0:
+                    self.debug_log(f"Found login indicator: {indicator} - NOT logged in", "DEBUG")
+                    return False
+            except:
+                continue
+        
+        # If we get here and we're not on login URL, assume we're logged in
+        if "login" not in current_url:
+            self.debug_log("Not on login page and no login form found - assuming logged in", "INFO")
+            return True
             
-            # Check if login form is NOT present
-            login_form_elements = self.page.locator('input[type="email"], input[name="email"]')
-            if login_form_elements.count() == 0:
-                self.debug_log("No login form found - likely logged in", "SUCCESS")
-                return True
-                
-            return False
-        except Exception as e:
-            self.debug_log(f"Error checking login status: {e}", "WARNING")
-            return False
+        return False
+    except Exception as e:
+        self.debug_log(f"Error checking login status: {e}", "WARNING")
+        return False
     
     def check_if_on_admin_page(self) -> bool:
         """Check if on the admin/backoffice page - improved detection"""

@@ -8,7 +8,7 @@ on:
 
 jobs:
   update-prayer-times:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Use Ubuntu 22.04 for better Playwright compatibility
     
     steps:
       - name: Checkout repository

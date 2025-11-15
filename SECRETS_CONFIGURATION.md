@@ -36,7 +36,8 @@ The following secrets must be configured in your GitHub repository settings (Set
 
 ## Configuration Status
 
-✅ **config.py** - Already properly configured to read from environment variables
+✅ **config.py** - Updated to prioritize environment variables and suppress .env warnings in CI/CD
+✅ **mawaqit_uploader.py** - Added entry point with config validation
 ✅ **mawaqit-automation.yml** - Updated to use correct secret names
 ✅ **main.yml** - Verified, uses correct secret names
 ✅ **prayer-times.yml** - Verified, no secrets needed (only extracts prayer times)
@@ -53,9 +54,10 @@ The following secrets must be configured in your GitHub repository settings (Set
 ## Verification
 
 All secrets are accessed via `os.getenv()` in the `config.py` file, which means:
-- They can be set as environment variables locally for testing
-- They are automatically available from GitHub Actions secrets
-- They can also be loaded from a `.env` file for local development (not committed to Git)
+- **In CI/CD (GitHub Actions)**: Environment variables are set directly from GitHub secrets and no .env file is required
+- **In Local Development**: Can use `.env` file for convenience (not committed to Git)
+- The code automatically detects CI/CD environments and suppresses .env file warnings
+- Environment variables always take precedence over .env file values
 
 ## Security Notes
 
@@ -65,9 +67,18 @@ All secrets are accessed via `os.getenv()` in the `config.py` file, which means:
 - Rotate secrets regularly for security
 - The `.env` file (if created) is already in `.gitignore`
 
-## Changes Made
+## Recent Changes
 
-The following change was made to ensure consistency:
+### 2024-11 Update: Enhanced CI/CD Support
+- **config.py**: Updated `_load_env_files()` to detect CI/CD environment and suppress .env warnings
+- **config.py**: Enhanced `validate()` to show CI/CD detection status and all credential states
+- **mawaqit_uploader.py**: Added `__main__` block for direct execution with config validation
 - **mawaqit-automation.yml**: Changed `NO_CAPTCHA_API_KEY` to `TWOCAPTCHA_API_KEY` to match the config.py expectation
+
+### Key Improvements
+- ✅ No more confusing ".env file not found" warnings in GitHub Actions
+- ✅ Clear detection and messaging for CI/CD vs local development environments
+- ✅ Proper exit codes for success/failure scenarios
+- ✅ Maintains backward compatibility with local .env files
 
 All secrets are now properly aligned across the codebase and workflows.

@@ -1,8 +1,6 @@
 """MawaqitUploader class implementation"""
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -37,10 +35,8 @@ class MawaqitUploader:
         # Enable performance logging to capture network traffic
         chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL', 'browser': 'ALL'})
         
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=chrome_options
-        )
+        # Use Selenium Manager (built-in to Selenium 4.6+) to automatically manage ChromeDriver
+        self.driver = webdriver.Chrome(options=chrome_options)
 
     def _find_element_with_selectors(self, selectors, timeout=15):
         """Try multiple selector tuples until one matches."""

@@ -34,12 +34,48 @@ jobs:
           pip install requests beautifulsoup4
 
       # 4) Run the debug uploader (upload_current_month.py)
-      - name: Debug & upload this month’s CSVs to Mawaqit
+      - name: Upload current month (normal mode)
         env:
           MAWAQIT_USER: ${{ secrets.MAWAQIT_USER }}
           MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
+          HEADLESS: "true"
+          DEBUG_MODE: "false"
         run: python upload_current_month.py
 
       # 5) Sanity check: list prayer_times directory
       - name: List prayer_times directory
         run: ls -1 prayer_times/
+
+  upload-debug:
+    needs: upload
+    if: ${{ needs.upload.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python 3.x
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
+      - name: Retry upload in debug mode
+        env:
+          MAWAQIT_USER: ${{ secrets.MAWAQIT_USER }}
+          MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
+          HEADLESS: "false"
+          DEBUG_MODE: "true"
+        run: |
+          echo "Primary upload failed; entering debug mode with screenshots enabled." 
+          python upload_current_month.py || echo "Debug script exited with code $?"
+      - name: Upload debug artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: monthly-debug-artifacts
+          path: |
+            debug_*.png
+            *.log
+            debug_log.txt
+          retention-days: 10

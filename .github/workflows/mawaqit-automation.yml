@@ -8,112 +8,84 @@ on:
 
 jobs:
   update-prayer-times:
-    runs-on: ubuntu-22.04  # Use Ubuntu 22.04 for better Playwright compatibility
+    runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
       
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Python dependencies for uploader
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        playwright install chromium
       
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      # Step 1: Run the prayer times scraper (Node.js)
-      - name: Install Node.js dependencies
-        run: npm install puppeteer csv-writer
-      
-      - name: Run Prayer Times Scraper
-        run: |
-          echo "🚀 Running prayer times scraper..."
-          node extract-prayer-times.js
-          
-          echo "📁 Prayer times directory contents:"
-          ls -la ./prayer_times/ || echo "No prayer_times directory found"
-          
-          # Get current month name
-          CURRENT_MONTH=$(date +%B)
-          
-          # Verify CSV files exist
-          if [ ! -f "./prayer_times/athan_times_${CURRENT_MONTH}.csv" ]; then
-            echo "❌ Error: Athan CSV not found for ${CURRENT_MONTH}"
-            exit 1
-          fi
-          
-          if [ ! -f "./prayer_times/iqama_times_${CURRENT_MONTH}.csv" ]; then
-            echo "❌ Error: Iqama CSV not found for ${CURRENT_MONTH}"
-            exit 1
-          fi
-          
-          echo "✅ CSV files created successfully"
-          
-          # Show sample of CSV content
-          echo "Sample Athan times:"
-          head -n 3 "./prayer_times/athan_times_${CURRENT_MONTH}.csv"
-          
-          echo "Sample Iqama times:"
-          head -n 3 "./prayer_times/iqama_times_${CURRENT_MONTH}.csv"
-      
-      # Step 2: Commit the generated CSV files
-      - name: Commit prayer times CSVs
-        run: |
-          git config --global user.name 'GitHub Actions'
-          git config --global user.email 'actions@github.com'
-          git add prayer_times/*.csv
-          git commit -m "Update prayer times for $(date +%B) $(date +%Y)" || echo "No changes to commit"
-          git push
-      
-      # Step 3: Install Python dependencies for Mawaqit uploader
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          playwright install chromium
-          playwright install-deps chromium
-      
-      # Step 4: Upload to Mawaqit
-      - name: Upload prayer times to Mawaqit
-        env:
-          MAWAQIT_USER: ${{ secrets.MAWAQIT_USER }}
-          MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
-          PRAYER_TIMES_DIR: ./prayer_times
-          CI: true
-          DEBUG_MODE: false
-        run: |
-          echo "📤 Uploading prayer times to Mawaqit..."
-          python main.py
-      
-      # Step 5: Upload artifacts on failure
-      - name: Upload debug screenshots on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshots
-          path: debug_*.png
-          retention-days: 7
-      
-      - name: Upload log files
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs
-          path: |
-            *.log
-            prayer_times/*.txt
-          retention-days: 7
-      
-      - name: Upload prayer times CSVs as artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: prayer-times-csv
-          path: prayer_times/*.csv
-          retention-days: 30
+    - name: Run Prayer Times Scraper
+      run: |
+        # Install Node.js dependencies
+        npm install
+        
+        # Run the prayer times scraper
+        echo "🚀 Running prayer times scraper..."
+        node extract-prayer-times.js
+        
+        # Verify CSV files were created
+        echo "📁 Prayer times directory contents:"
+        ls -la ./prayer_times/ || echo "No prayer_times directory found"
+        
+    - name: Upload to Mawaqit (normal mode)
+      env:
+        MAWAQIT_USER: ${{ secrets.MAWAQIT_USER }}
+        MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
+        GMAIL_USER: ${{ secrets.GMAIL_USER }}
+        GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        PRAYER_TIMES_DIR: ./prayer_times
+        NO_CAPTCHA_API_KEY: ${{ secrets.NO_CAPTCHA_API_KEY }} # Add your NoCaptcha AI key as a secret
+        HEADLESS: "true"
+        DEBUG_MODE: "false"
+      run: |
+        python mawaqit_uploader.py
+        
+  debug-retry:
+    needs: update-prayer-times
+    if: ${{ needs.update-prayer-times.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Retry Upload to Mawaqit (debug mode)
+      env:
+        MAWAQIT_USER: ${{ secrets.MAWAQIT_USER }}
+        MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
+        GMAIL_USER: ${{ secrets.GMAIL_USER }}
+        GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        PRAYER_TIMES_DIR: ./prayer_times
+        NO_CAPTCHA_API_KEY: ${{ secrets.NO_CAPTCHA_API_KEY }}
+        HEADLESS: "false"
+        DEBUG_MODE: "true"
+      run: |
+        echo "⚠️ Primary upload failed. Running debug retry with screenshots enabled." 
+        python mawaqit_uploader.py || echo "Debug retry script exited with code $?"
+    - name: Upload debug artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-artifacts
+        path: |
+          debug_*.png
+          *.log
+          debug_log.txt
+          upload_debug.log
+        retention-days: 10

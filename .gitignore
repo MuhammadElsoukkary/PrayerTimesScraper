@@ -10,6 +10,12 @@ yarn.lock
 *.log
 logs/
 debug/
+debug_*.png
+debug_log.txt
+upload_debug.log
+test_run_*.log
+debug_after_*_*.png
+debug_verification_field_not_found_*.png
 
 # Temporary files
 *.tmp
@@ -34,6 +40,7 @@ temp/
 # Puppeteer generated files
 .cache/
 screenshots/
+screenshots/**
 
 # Certificates and keys
 *.pem

@@ -3211,3 +3211,54 @@ class MawaqitUploader:
                 self.driver.quit()
             except Exception:
                 pass
+
+
+if __name__ == "__main__":
+    """Entry point when run directly"""
+    import sys
+    
+    print("""
+    ╔══════════════════════════════════════════════════════════╗
+    ║       Mawaqit Prayer Times Uploader                      ║
+    ║       Automated Prayer Times Management                  ║
+    ╚══════════════════════════════════════════════════════════╝
+    """)
+    
+    # Validate configuration before proceeding
+    try:
+        Config.validate()
+        logger.success("✅ Configuration validated successfully")
+    except ValueError as e:
+        logger.error(f"❌ Configuration validation failed: {e}")
+        logger.info("Please ensure the following environment variables are set:")
+        logger.info("  Required: MAWAQIT_USER, MAWAQIT_PASS")
+        logger.info("  Optional: GMAIL_USER, GMAIL_APP_PASSWORD, TWOCAPTCHA_API_KEY")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"❌ Unexpected error during configuration: {e}")
+        sys.exit(1)
+    
+    print("-" * 60)
+    
+    # Create uploader instance and run
+    try:
+        uploader = MawaqitUploader()
+        success = uploader.run()
+        
+        if success:
+            logger.success("🎉 Prayer times uploaded to Mawaqit successfully!")
+            logger.success("✅ Both Athan and Iqama times have been updated")
+            sys.exit(0)
+        else:
+            logger.error("❌ Failed to complete the upload process")
+            sys.exit(1)
+    
+    except KeyboardInterrupt:
+        logger.warning("⚠️ Process interrupted by user")
+        sys.exit(130)
+    
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+        sys.exit(1)

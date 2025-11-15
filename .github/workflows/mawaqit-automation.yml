@@ -44,8 +44,8 @@ jobs:
         MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
         PRAYER_TIMES_DIR: ./prayer_times
-        NO_CAPTCHA_API_KEY: ${{ secrets.NO_CAPTCHA_API_KEY }} # Add your NoCaptcha AI key as a secret
         HEADLESS: "true"
         DEBUG_MODE: "false"
       run: |
@@ -72,8 +72,8 @@ jobs:
         MAWAQIT_PASS: ${{ secrets.MAWAQIT_PASS }}
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
         PRAYER_TIMES_DIR: ./prayer_times
-        NO_CAPTCHA_API_KEY: ${{ secrets.NO_CAPTCHA_API_KEY }}
         HEADLESS: "false"
         DEBUG_MODE: "true"
       run: |

@@ -1230,6 +1230,17 @@ class MawaqitUploader:
         }
         return mapping.get(month_name, [month_name, month_name.lower(), month_name.capitalize()])
 
+    def _log_csv_verification(self, local_path):
+        """Log first few lines of CSV for verification."""
+        try:
+            with open(local_path, 'r') as f:
+                first_lines = [f.readline().strip() for _ in range(3)]
+                logger.debug(f"   First 3 lines of CSV:")
+                for i, line in enumerate(first_lines, 1):
+                    logger.debug(f"     {i}. {line[:80]}...")
+        except Exception:
+            pass
+
     def _download_month_csvs(self, month_name):
         """Get athan and iqama CSVs for the given month.
         First checks for local files, then falls back to downloading from GitHub.
@@ -1242,6 +1253,9 @@ class MawaqitUploader:
             }
             out_dir = getattr(Config, "PRAYER_TIMES_DIR", "./prayer-times")
             os.makedirs(out_dir, exist_ok=True)
+            
+            # GitHub base URL for downloading files if not found locally
+            github_base_url = "https://raw.githubusercontent.com/MuhammadElsoukkary/PrayerTimesScraper/main/prayer_times/"
 
             paths = {}
             for key, fname in names.items():
@@ -1252,22 +1266,11 @@ class MawaqitUploader:
                     file_size = os.path.getsize(local)
                     logger.success(f"✓ Found local {fname} ({file_size} bytes)")
                     logger.debug(f"   Local path: {os.path.abspath(local)}")
-                    
-                    # Log first few lines of CSV for verification
-                    try:
-                        with open(local, 'r') as f:
-                            first_lines = [f.readline().strip() for _ in range(3)]
-                            logger.debug(f"   First 3 lines of CSV:")
-                            for i, line in enumerate(first_lines, 1):
-                                logger.debug(f"     {i}. {line[:80]}...")
-                    except Exception:
-                        pass
-                    
+                    self._log_csv_verification(local)
                     paths[key] = local
                 else:
                     # File doesn't exist locally, try downloading from GitHub
-                    base = "https://raw.githubusercontent.com/MuhammadElsoukkary/PrayerTimesScraper/main/prayer_times/"
-                    url = base + fname
+                    url = github_base_url + fname
                     logger.info(f"📥 Local file not found, downloading {fname} from GitHub...")
                     logger.debug(f"   URL: {url}")
                     try:
@@ -1280,17 +1283,7 @@ class MawaqitUploader:
                             file_size = os.path.getsize(local)
                             logger.success(f"✓ Downloaded and saved {fname} ({file_size} bytes)")
                             logger.debug(f"   Local path: {os.path.abspath(local)}")
-                            
-                            # Log first few lines of CSV for verification
-                            try:
-                                with open(local, 'r') as f:
-                                    first_lines = [f.readline().strip() for _ in range(3)]
-                                    logger.debug(f"   First 3 lines of CSV:")
-                                    for i, line in enumerate(first_lines, 1):
-                                        logger.debug(f"     {i}. {line[:80]}...")
-                            except Exception:
-                                pass
-                            
+                            self._log_csv_verification(local)
                             paths[key] = local
                         else:
                             logger.error(f"Failed to download {fname}: HTTP {r.status_code}")

@@ -1231,11 +1231,11 @@ class MawaqitUploader:
         return mapping.get(month_name, [month_name, month_name.lower(), month_name.capitalize()])
 
     def _download_month_csvs(self, month_name):
-        """Download athan and iqama CSVs for the given month from the GitHub raw repo.
+        """Get athan and iqama CSVs for the given month.
+        First checks for local files, then falls back to downloading from GitHub.
         Returns dict{ 'athan': path, 'iqama': path } on success or None on failure.
         """
         try:
-            base = "https://raw.githubusercontent.com/MuhammadElsoukkary/PrayerTimesScraper/main/prayer_times/"
             names = {
                 'athan': f"athan_times_{month_name}.csv",
                 'iqama': f"iqama_times_{month_name}.csv"
@@ -1245,39 +1245,60 @@ class MawaqitUploader:
 
             paths = {}
             for key, fname in names.items():
-                url = base + fname
-                logger.info(f"📥 Downloading {fname} from GitHub...")
-                logger.debug(f"   URL: {url}")
-                try:
-                    r = requests.get(url, timeout=30)
-                    if r.status_code == 200:
-                        local = os.path.join(out_dir, fname)
-                        with open(local, "wb") as fh:
-                            fh.write(r.content)
-                        
-                        # Verify file was written
-                        file_size = os.path.getsize(local)
-                        logger.success(f"✓ Saved {fname} ({file_size} bytes)")
-                        logger.debug(f"   Local path: {os.path.abspath(local)}")
-                        
-                        # Log first few lines of CSV for verification
-                        try:
-                            with open(local, 'r') as f:
-                                first_lines = [f.readline().strip() for _ in range(3)]
-                                logger.debug(f"   First 3 lines of CSV:")
-                                for i, line in enumerate(first_lines, 1):
-                                    logger.debug(f"     {i}. {line[:80]}...")
-                        except Exception:
-                            pass
-                        
-                        paths[key] = local
-                    else:
-                        logger.error(f"Failed to download {fname}: HTTP {r.status_code}")
-                        logger.debug(f"   Response: {r.text[:200]}")
+                local = os.path.join(out_dir, fname)
+                
+                # Check if file exists locally first
+                if os.path.exists(local) and os.path.getsize(local) > 0:
+                    file_size = os.path.getsize(local)
+                    logger.success(f"✓ Found local {fname} ({file_size} bytes)")
+                    logger.debug(f"   Local path: {os.path.abspath(local)}")
+                    
+                    # Log first few lines of CSV for verification
+                    try:
+                        with open(local, 'r') as f:
+                            first_lines = [f.readline().strip() for _ in range(3)]
+                            logger.debug(f"   First 3 lines of CSV:")
+                            for i, line in enumerate(first_lines, 1):
+                                logger.debug(f"     {i}. {line[:80]}...")
+                    except Exception:
+                        pass
+                    
+                    paths[key] = local
+                else:
+                    # File doesn't exist locally, try downloading from GitHub
+                    base = "https://raw.githubusercontent.com/MuhammadElsoukkary/PrayerTimesScraper/main/prayer_times/"
+                    url = base + fname
+                    logger.info(f"📥 Local file not found, downloading {fname} from GitHub...")
+                    logger.debug(f"   URL: {url}")
+                    try:
+                        r = requests.get(url, timeout=30)
+                        if r.status_code == 200:
+                            with open(local, "wb") as fh:
+                                fh.write(r.content)
+                            
+                            # Verify file was written
+                            file_size = os.path.getsize(local)
+                            logger.success(f"✓ Downloaded and saved {fname} ({file_size} bytes)")
+                            logger.debug(f"   Local path: {os.path.abspath(local)}")
+                            
+                            # Log first few lines of CSV for verification
+                            try:
+                                with open(local, 'r') as f:
+                                    first_lines = [f.readline().strip() for _ in range(3)]
+                                    logger.debug(f"   First 3 lines of CSV:")
+                                    for i, line in enumerate(first_lines, 1):
+                                        logger.debug(f"     {i}. {line[:80]}...")
+                            except Exception:
+                                pass
+                            
+                            paths[key] = local
+                        else:
+                            logger.error(f"Failed to download {fname}: HTTP {r.status_code}")
+                            logger.debug(f"   Response: {r.text[:200]}")
+                            return None
+                    except Exception as e:
+                        logger.error(f"Exception downloading {fname}: {e}")
                         return None
-                except Exception as e:
-                    logger.error(f"Exception downloading {fname}: {e}")
-                    return None
             return paths
         except Exception as e:
             logger.error(f"Error in _download_month_csvs: {e}")

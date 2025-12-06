@@ -279,48 +279,105 @@ async function extractPrayerTimes() {
       }
     }
     
+    // Helper function to generate CSV files for a specific month
+    async function generateMonthCSVs(targetMonth, targetYear, monthData, monthName) {
+      // Create headers for the CSV files
+      const athanHeaders = [
+        { id: 'day', title: 'Day' },
+        { id: 'Fajr', title: 'Fajr' },
+        { id: 'Sunrise', title: 'Sunrise' },
+        { id: 'Dhuhr', title: 'Dhuhr' },
+        { id: 'Asr', title: 'Asr' },
+        { id: 'Maghrib', title: 'Maghrib' },
+        { id: 'Isha', title: 'Isha' }
+      ];
+      
+      const iqamaHeaders = [
+        { id: 'day', title: 'Day' },
+        { id: 'Fajr', title: 'Fajr' },
+        { id: 'Dhuhr', title: 'Dhuhr' },
+        { id: 'Asr', title: 'Asr' },
+        { id: 'Maghrib', title: 'Maghrib' },
+        { id: 'Isha', title: 'Isha' }
+      ];
+      
+      // Create the CSV writers with month name in filename
+      const athanCsvWriter = createCsvWriter({
+        path: path.join(outputDir, `athan_times_${monthName}.csv`),
+        header: athanHeaders
+      });
+      
+      const iqamaCsvWriter = createCsvWriter({
+        path: path.join(outputDir, `iqama_times_${monthName}.csv`),
+        header: iqamaHeaders
+      });
+      
+      // Write the CSV files
+      await athanCsvWriter.writeRecords(monthData.athan);
+      log(`✅ Athan times for ${monthName} saved to ${path.join(outputDir, `athan_times_${monthName}.csv`)}`);
+      
+      await iqamaCsvWriter.writeRecords(monthData.iqama);
+      log(`✅ Iqama times for ${monthName} saved to ${path.join(outputDir, `iqama_times_${monthName}.csv`)}`);
+    }
+    
     // Get current month name
     const monthName = today.toLocaleString('default', { month: 'long' });
     
-    // Create headers for the CSV files
-    const athanHeaders = [
-      { id: 'day', title: 'Day' },
-      { id: 'Fajr', title: 'Fajr' },
-      { id: 'Sunrise', title: 'Sunrise' },
-      { id: 'Dhuhr', title: 'Dhuhr' },
-      { id: 'Asr', title: 'Asr' },
-      { id: 'Maghrib', title: 'Maghrib' },
-      { id: 'Isha', title: 'Isha' }
-    ];
+    // Generate CSV files for current month
+    log(`📅 Generating CSV files for current month: ${monthName}`);
+    await generateMonthCSVs(currentMonth, currentYear, {
+      athan: athanMonth,
+      iqama: iqamaMonth
+    }, monthName);
     
-    const iqamaHeaders = [
-      { id: 'day', title: 'Day' },
-      { id: 'Fajr', title: 'Fajr' },
-      { id: 'Dhuhr', title: 'Dhuhr' },
-      { id: 'Asr', title: 'Asr' },
-      { id: 'Maghrib', title: 'Maghrib' },
-      { id: 'Isha', title: 'Isha' }
-    ];
+    // Generate CSV files for next month as well
+    const nextMonthDate = new Date(currentYear, currentMonth + 1, 1);
+    const nextMonth = nextMonthDate.getMonth();
+    const nextYear = nextMonthDate.getFullYear();
+    const nextMonthName = nextMonthDate.toLocaleString('default', { month: 'long' });
+    const daysInNextMonth = new Date(nextYear, nextMonth + 1, 0).getDate();
     
-    // Create the CSV writers with month name in filename
-    const athanCsvWriter = createCsvWriter({
-      path: path.join(outputDir, `athan_times_${monthName}.csv`),
-      header: athanHeaders
-    });
+    log(`📅 Generating CSV files for next month: ${nextMonthName}`);
     
-    const iqamaCsvWriter = createCsvWriter({
-      path: path.join(outputDir, `iqama_times_${monthName}.csv`),
-      header: iqamaHeaders
-    });
+    // Generate data for next month using the day-of-week pattern
+    const athanNextMonth = [];
+    const iqamaNextMonth = [];
     
-    // Write the CSV files
-    await athanCsvWriter.writeRecords(athanMonth);
-    log(`Athan times for full month saved to ${path.join(outputDir, `athan_times_${monthName}.csv`)}`);
+    for (let day = 1; day <= daysInNextMonth; day++) {
+      const date = new Date(nextYear, nextMonth, day);
+      const dayOfWeek = date.getDay(); // 0-6
+      
+      if (dayOfWeekMap[dayOfWeek]) {
+        // Use day of week pattern
+        athanNextMonth.push({
+          day: day,
+          ...dayOfWeekMap[dayOfWeek].athan
+        });
+        
+        iqamaNextMonth.push({
+          day: day,
+          ...dayOfWeekMap[dayOfWeek].iqama
+        });
+      } else {
+        // Fallback to first day's data
+        athanNextMonth.push({
+          day: day,
+          ...processedWeekData[0].athan
+        });
+        
+        iqamaNextMonth.push({
+          day: day,
+          ...processedWeekData[0].iqama
+        });
+      }
+    }
     
-    await iqamaCsvWriter.writeRecords(iqamaMonth);
-    log(`Iqama times for full month saved to ${path.join(outputDir, `iqama_times_${monthName}.csv`)}`);
+    await generateMonthCSVs(nextMonth, nextYear, {
+      athan: athanNextMonth,
+      iqama: iqamaNextMonth
+    }, nextMonthName);
     
-    log('Prayer times extraction completed successfully!');
+    log('✅ Prayer times extraction completed successfully for current and next month!');
     
     return { athanMonth, iqamaMonth };
   } catch (error) {

@@ -279,9 +279,6 @@ async function extractPrayerTimes() {
       }
     }
     
-    // Get current month name
-    const monthName = today.toLocaleString('default', { month: 'long' });
-    
     // Create headers for the CSV files
     const athanHeaders = [
       { id: 'day', title: 'Day' },
@@ -302,25 +299,73 @@ async function extractPrayerTimes() {
       { id: 'Isha', title: 'Isha' }
     ];
     
-    // Create the CSV writers with month name in filename
-    const athanCsvWriter = createCsvWriter({
-      path: path.join(outputDir, `athan_times_${monthName}.csv`),
-      header: athanHeaders
-    });
+    // Generate CSV files for ALL 12 months using the same prayer pattern
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
     
-    const iqamaCsvWriter = createCsvWriter({
-      path: path.join(outputDir, `iqama_times_${monthName}.csv`),
-      header: iqamaHeaders
-    });
+    log('Generating CSV files for all 12 months...');
     
-    // Write the CSV files
-    await athanCsvWriter.writeRecords(athanMonth);
-    log(`Athan times for full month saved to ${path.join(outputDir, `athan_times_${monthName}.csv`)}`);
+    for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+      const monthName = monthNames[monthIndex];
+      const year = today.getFullYear();
+      
+      // Calculate days in this month
+      const daysInThisMonth = new Date(year, monthIndex + 1, 0).getDate();
+      
+      // Generate prayer times for this month using day-of-week pattern
+      const athanThisMonth = [];
+      const iqamaThisMonth = [];
+      
+      for (let day = 1; day <= daysInThisMonth; day++) {
+        const date = new Date(year, monthIndex, day);
+        const dayOfWeek = date.getDay();
+        
+        if (dayOfWeekMap[dayOfWeek]) {
+          athanThisMonth.push({
+            day: day,
+            ...dayOfWeekMap[dayOfWeek].athan
+          });
+          
+          iqamaThisMonth.push({
+            day: day,
+            ...dayOfWeekMap[dayOfWeek].iqama
+          });
+        } else {
+          // Fallback to first day's data if no pattern exists
+          athanThisMonth.push({
+            day: day,
+            ...processedWeekData[0].athan
+          });
+          
+          iqamaThisMonth.push({
+            day: day,
+            ...processedWeekData[0].iqama
+          });
+        }
+      }
+      
+      // Create CSV writers for this month
+      const athanCsvWriter = createCsvWriter({
+        path: path.join(outputDir, `athan_times_${monthName}.csv`),
+        header: athanHeaders
+      });
+      
+      const iqamaCsvWriter = createCsvWriter({
+        path: path.join(outputDir, `iqama_times_${monthName}.csv`),
+        header: iqamaHeaders
+      });
+      
+      // Write the CSV files for this month
+      await athanCsvWriter.writeRecords(athanThisMonth);
+      log(`Athan times for ${monthName} saved to ${path.join(outputDir, `athan_times_${monthName}.csv`)}`);
+      
+      await iqamaCsvWriter.writeRecords(iqamaThisMonth);
+      log(`Iqama times for ${monthName} saved to ${path.join(outputDir, `iqama_times_${monthName}.csv`)}`);
+    }
     
-    await iqamaCsvWriter.writeRecords(iqamaMonth);
-    log(`Iqama times for full month saved to ${path.join(outputDir, `iqama_times_${monthName}.csv`)}`);
-    
-    log('Prayer times extraction completed successfully!');
+    log('Prayer times extraction completed successfully for all 12 months!');
     
     return { athanMonth, iqamaMonth };
   } catch (error) {

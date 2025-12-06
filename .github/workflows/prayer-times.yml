@@ -3,6 +3,8 @@ on:
   schedule:
     # Run every Sunday at 3:00 AM UTC (adjust as needed)
     - cron: '0 3 * * 0'  # Fixed spacing between * and 0
+    # Run on the 1st day of every month at 3:00 AM UTC
+    - cron: '0 3 1 * *'
   workflow_dispatch: # Allows manual triggering
 jobs:
   extract-prayer-times:

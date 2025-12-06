@@ -12,6 +12,7 @@ import re
 import imaplib
 import email
 import json
+import glob
 from datetime import datetime, timedelta
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.keys import Keys
@@ -1208,6 +1209,61 @@ class MawaqitUploader:
     def _get_month_name(self):
         """Return current month name (e.g. 'November')."""
         return datetime.now().strftime("%B")
+    
+    def _get_available_months(self):
+        """Get list of months that have CSV files available in the prayer times directory.
+        Returns a list of month names (e.g., ['November', 'December']) sorted chronologically.
+        """
+        try:
+            prayer_dir = getattr(Config, "PRAYER_TIMES_DIR", "./prayer-times")
+            if not os.path.exists(prayer_dir):
+                logger.warning(f"Prayer times directory not found: {prayer_dir}")
+                return []
+            
+            # Look for athan CSV files (athan_times_*.csv)
+            import glob
+            athan_files = glob.glob(os.path.join(prayer_dir, "athan_times_*.csv"))
+            
+            # Extract month names from filenames
+            months = []
+            for filepath in athan_files:
+                filename = os.path.basename(filepath)
+                # Extract month name from "athan_times_MonthName.csv"
+                match = re.match(r'athan_times_(.+)\.csv', filename)
+                if match:
+                    month_name = match.group(1)
+                    months.append(month_name)
+            
+            if not months:
+                logger.warning("No month CSV files found in prayer times directory")
+                return []
+            
+            # Sort months chronologically (current month first, then future months)
+            month_order = {
+                'January': 1, 'February': 2, 'March': 3, 'April': 4,
+                'May': 5, 'June': 6, 'July': 7, 'August': 8,
+                'September': 9, 'October': 10, 'November': 11, 'December': 12
+            }
+            
+            current_month = datetime.now().month
+            
+            def month_sort_key(month_name):
+                month_num = month_order.get(month_name, 0)
+                if month_num == 0:
+                    return 999  # Unknown months go to end
+                # Calculate distance from current month (wrapping around year)
+                if month_num >= current_month:
+                    return month_num - current_month
+                else:
+                    return (12 - current_month) + month_num
+            
+            sorted_months = sorted(months, key=month_sort_key)
+            logger.info(f"Found CSV files for months: {sorted_months}")
+            return sorted_months
+            
+        except Exception as e:
+            logger.error(f"Error getting available months: {e}")
+            return []
 
     def _possible_month_labels(self, month_name):
         """Return a list of possible displayed labels for the given English month name.
@@ -3156,39 +3212,77 @@ class MawaqitUploader:
             if self._click_actions_and_configure(timeout=12):
                 logger.success("✅ Actions -> Configure clicked successfully.")
                 
-                # Download and upload CSVs
-                month = self._get_month_name()
-                logger.info(f"Preparing CSVs for month: {month}")
-                csvs = self._download_month_csvs(month)
-                if csvs and 'athan' in csvs:
-                    logger.info("Uploading athan CSV via Pre-populate UI...")
-                    if self._click_calculation_and_prepopulate(csvs['athan'], month):
-                        logger.success("Athan CSV pre-population sequence complete.")
-                        
-                        # Now upload iqama times
-                        if 'iqama' in csvs:
-                            logger.info("Now uploading iqama CSV...")
-                            if self._upload_iqama_times(csvs['iqama'], month):
-                                logger.success("Iqama CSV pre-population sequence complete.")
-                                
-                                # Click Save button
-                                if self._click_save_button():
-                                    logger.success("🎉 All prayer times uploaded and saved!")
-                                    return True  # Success!
-                                else:
-                                    logger.error("Failed to click Save button")
-                                    return False
-                            else:
-                                logger.error("Failed during iqama upload sequence")
-                                return False
-                        else:
-                            logger.error("Iqama CSV not downloaded")
-                            return False
+                # Get all available months (current + future months with CSV files)
+                available_months = self._get_available_months()
+                if not available_months:
+                    logger.error("No month CSV files found to upload")
+                    return False
+                
+                logger.info(f"📅 Will upload prayer times for {len(available_months)} month(s): {', '.join(available_months)}")
+                
+                # Upload each month's prayer times
+                upload_results = {}
+                for month in available_months:
+                    logger.info("=" * 80)
+                    logger.info(f"📆 Processing month: {month}")
+                    logger.info("=" * 80)
+                    
+                    # Download CSVs for this month
+                    logger.info(f"Downloading CSVs for {month}...")
+                    csvs = self._download_month_csvs(month)
+                    
+                    if not csvs or 'athan' not in csvs:
+                        logger.error(f"❌ Could not download required CSVs for {month}")
+                        upload_results[month] = False
+                        continue
+                    
+                    # Upload athan times
+                    logger.info(f"Uploading athan CSV for {month}...")
+                    if not self._click_calculation_and_prepopulate(csvs['athan'], month):
+                        logger.error(f"❌ Failed to upload athan times for {month}")
+                        upload_results[month] = False
+                        continue
+                    
+                    logger.success(f"✅ Athan CSV uploaded for {month}")
+                    
+                    # Upload iqama times
+                    if 'iqama' not in csvs:
+                        logger.error(f"❌ Iqama CSV not available for {month}")
+                        upload_results[month] = False
+                        continue
+                    
+                    logger.info(f"Uploading iqama CSV for {month}...")
+                    if not self._upload_iqama_times(csvs['iqama'], month):
+                        logger.error(f"❌ Failed to upload iqama times for {month}")
+                        upload_results[month] = False
+                        continue
+                    
+                    logger.success(f"✅ Iqama CSV uploaded for {month}")
+                    upload_results[month] = True
+                
+                # Summary of uploads
+                logger.info("=" * 80)
+                logger.info("📊 UPLOAD SUMMARY")
+                logger.info("=" * 80)
+                successful_months = [m for m, success in upload_results.items() if success]
+                failed_months = [m for m, success in upload_results.items() if not success]
+                
+                logger.info(f"✅ Successful: {len(successful_months)} month(s) - {', '.join(successful_months) if successful_months else 'None'}")
+                if failed_months:
+                    logger.warning(f"❌ Failed: {len(failed_months)} month(s) - {', '.join(failed_months)}")
+                logger.info("=" * 80)
+                
+                # Save if at least one month was uploaded successfully
+                if successful_months:
+                    logger.info("Saving all uploaded prayer times...")
+                    if self._click_save_button():
+                        logger.success(f"🎉 Prayer times for {len(successful_months)} month(s) uploaded and saved!")
+                        return True
                     else:
-                        logger.error("Failed during pre-populate/upload - check screenshots.")
+                        logger.error("Failed to click Save button")
                         return False
                 else:
-                    logger.error("Could not download required CSVs.")
+                    logger.error("No months were uploaded successfully")
                     return False
 
             # If we reach here without explicit return, something went wrong

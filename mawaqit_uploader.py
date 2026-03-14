@@ -54,15 +54,16 @@ class MawaqitUploader:
 
     def _resolve_accordion_toggle(self, element):
         """Traverse up from *element* to find the nearest ancestor (or self) that carries
-        a Bootstrap accordion ``data-target`` or ``href`` attribute.  Returns the ancestor
-        element if found, or *None* if the maximum depth is reached without a match.
+        a Bootstrap accordion ``data-bs-target`` (Bootstrap 5), ``data-target`` (Bootstrap 3/4),
+        or ``href`` attribute.  Returns the ancestor element if found, or *None* if the maximum
+        depth is reached without a match.
         """
         toggle = self.driver.execute_script(
             """
             var el = arguments[0];
             var depth = arguments[1];
             for (var i = 0; i < depth && el; i++) {
-                var target = el.getAttribute('data-target') || el.getAttribute('href');
+                var target = el.getAttribute('data-bs-target') || el.getAttribute('data-target') || el.getAttribute('href');
                 if (target) return el;
                 el = el.parentElement;
             }
@@ -1435,15 +1436,15 @@ class MawaqitUploader:
                 return False
 
             # The found element may be a child span/text node inside the actual accordion toggle.
-            # Traverse up the DOM to find an ancestor that has data-target or href, which is
-            # the real Bootstrap accordion toggle button/link.
+            # Traverse up the DOM to find an ancestor that has data-bs-target (Bootstrap 5),
+            # data-target, or href — the real Bootstrap accordion toggle button/link.
             actual_toggle = self._resolve_accordion_toggle(month_el)
             if actual_toggle:
                 month_el = actual_toggle
                 logger.debug(f"Resolved accordion toggle: tag={month_el.tag_name}, "
-                             f"target={month_el.get_attribute('data-target') or month_el.get_attribute('href')}")
+                             f"target={month_el.get_attribute('data-bs-target') or month_el.get_attribute('data-target') or month_el.get_attribute('href')}")
             else:
-                logger.warning("Could not find accordion toggle ancestor with data-target/href; "
+                logger.warning("Could not find accordion toggle ancestor with data-bs-target/data-target/href; "
                                "proceeding with original element")
 
             # Click to expand the month accordion - with detailed debugging
@@ -1455,8 +1456,8 @@ class MawaqitUploader:
                     var ariaExpanded = el.getAttribute('aria-expanded');
                     var classList = el.className;
                     
-                    // Find associated panel
-                    var target = el.getAttribute('data-target') || el.getAttribute('href');
+                    // Find associated panel (Bootstrap 5: data-bs-target, Bootstrap 3/4: data-target or href)
+                    var target = el.getAttribute('data-bs-target') || el.getAttribute('data-target') || el.getAttribute('href');
                     var panel = target ? document.querySelector(target) : null;
                     var panelVisible = panel ? panel.classList.contains('show') : false;
                     
@@ -1500,11 +1501,11 @@ class MawaqitUploader:
                 force_open_result = self.driver.execute_script("""
                     var el = arguments[0];
                     var maxDepth = arguments[1];
-                    // Traverse up to find the actual accordion toggle with data-target or href
+                    // Traverse up to find the actual accordion toggle with data-bs-target, data-target or href
                     var toggleEl = el;
                     var target = null;
                     for (var i = 0; i < maxDepth && toggleEl; i++) {
-                        target = toggleEl.getAttribute('data-target') || toggleEl.getAttribute('href');
+                        target = toggleEl.getAttribute('data-bs-target') || toggleEl.getAttribute('data-target') || toggleEl.getAttribute('href');
                         if (target) break;
                         toggleEl = toggleEl.parentElement;
                     }
@@ -1577,8 +1578,11 @@ class MawaqitUploader:
                 # CRITICAL: Get inputs from the expanded month panel using the month_el we just clicked
                 # Resolve the accordion toggle to get its data-target or href panel reference
                 toggle_el = self._resolve_accordion_toggle(month_el)
-                panel_id = (toggle_el.get_attribute('data-target') or toggle_el.get_attribute('href')
-                            ) if toggle_el else None
+                panel_id = (
+                    toggle_el.get_attribute('data-bs-target') or
+                    toggle_el.get_attribute('data-target') or
+                    toggle_el.get_attribute('href')
+                ) if toggle_el else None
                 logger.info(f"📍 Athan panel ID: {panel_id}")
                 
                 if panel_id and panel_id.startswith('#'):
@@ -1603,8 +1607,39 @@ class MawaqitUploader:
                 logger.info(f"Found {len(visible_inputs)} VISIBLE Athan calendar inputs")
                 
                 if len(visible_inputs) == 0:
-                    logger.error("No visible inputs found! Cannot populate.")
+                    logger.warning("⚠️ No visible inputs via Selenium. Attempting JS force-show fallback...")
                     self._save_debug_screenshot("no_visible_inputs")
+                    try:
+                        # Force-show all collapse panels that are ancestors of any
+                        # calendar-prayer-time input, then re-collect visible inputs.
+                        self.driver.execute_script("""
+                            var inputs = document.querySelectorAll('input.calendar-prayer-time');
+                            for (var i = 0; i < inputs.length; i++) {
+                                var parent = inputs[i].parentElement;
+                                for (var j = 0; j < 20 && parent; j++) {
+                                    if (parent.classList.contains('collapse')) {
+                                        parent.classList.add('show');
+                                        parent.style.display = 'block';
+                                        parent.style.height = '';
+                                    }
+                                    parent = parent.parentElement;
+                                }
+                            }
+                        """)
+                        time.sleep(1.0)
+                        visible_inputs = []
+                        for inp in inputs:
+                            try:
+                                if inp.is_displayed():
+                                    visible_inputs.append(inp)
+                            except:
+                                pass
+                        logger.info(f"After JS force-show: found {len(visible_inputs)} VISIBLE Athan calendar inputs")
+                    except Exception as e:
+                        logger.error(f"JS force-show fallback failed: {e}")
+
+                if len(visible_inputs) == 0:
+                    logger.error("No visible inputs found even after JS force-show! Cannot populate.")
                     return False
                 
                 # First, log the CSV structure to verify
@@ -1668,11 +1703,11 @@ class MawaqitUploader:
                     self.driver.execute_script("""
                         var el = arguments[0];
                         var maxDepth = arguments[1];
-                        // Traverse up to find the accordion toggle with data-target or href
+                        // Traverse up to find the accordion toggle with data-bs-target, data-target or href
                         var toggleEl = el;
                         var target = null;
                         for (var i = 0; i < maxDepth && toggleEl; i++) {
-                            target = toggleEl.getAttribute('data-target') || toggleEl.getAttribute('href');
+                            target = toggleEl.getAttribute('data-bs-target') || toggleEl.getAttribute('data-target') || toggleEl.getAttribute('href');
                             if (target) break;
                             toggleEl = toggleEl.parentElement;
                         }

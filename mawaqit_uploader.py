@@ -38,6 +38,9 @@ class MawaqitUploader:
         # Use Selenium Manager (built-in to Selenium 4.6+) to automatically manage ChromeDriver
         self.driver = webdriver.Chrome(options=chrome_options)
 
+    # Maximum number of ancestor levels to traverse when searching for an accordion toggle
+    _ACCORDION_ANCESTOR_DEPTH = 6
+
     def _find_element_with_selectors(self, selectors, timeout=15):
         """Try multiple selector tuples until one matches."""
         wait = WebDriverWait(self.driver, timeout)
@@ -48,6 +51,27 @@ class MawaqitUploader:
             except Exception as e:
                 last_exc = e
         raise last_exc if last_exc else Exception("Element not found with provided selectors")
+
+    def _resolve_accordion_toggle(self, element):
+        """Traverse up from *element* to find the nearest ancestor (or self) that carries
+        a Bootstrap accordion ``data-target`` or ``href`` attribute.  Returns the ancestor
+        element if found, or *None* if the maximum depth is reached without a match.
+        """
+        toggle = self.driver.execute_script(
+            """
+            var el = arguments[0];
+            var depth = arguments[1];
+            for (var i = 0; i < depth && el; i++) {
+                var target = el.getAttribute('data-target') || el.getAttribute('href');
+                if (target) return el;
+                el = el.parentElement;
+            }
+            return null;
+            """,
+            element,
+            self._ACCORDION_ANCESTOR_DEPTH,
+        )
+        return toggle
 
     def _type_visible(self, element, text, char_delay=0.1):
         """Type text visibly with logging."""
@@ -1410,6 +1434,18 @@ class MawaqitUploader:
                 self._save_debug_screenshot("month_header_not_found")
                 return False
 
+            # The found element may be a child span/text node inside the actual accordion toggle.
+            # Traverse up the DOM to find an ancestor that has data-target or href, which is
+            # the real Bootstrap accordion toggle button/link.
+            actual_toggle = self._resolve_accordion_toggle(month_el)
+            if actual_toggle:
+                month_el = actual_toggle
+                logger.debug(f"Resolved accordion toggle: tag={month_el.tag_name}, "
+                             f"target={month_el.get_attribute('data-target') or month_el.get_attribute('href')}")
+            else:
+                logger.warning("Could not find accordion toggle ancestor with data-target/href; "
+                               "proceeding with original element")
+
             # Click to expand the month accordion - with detailed debugging
             logger.info(f"Opening month accordion for {month_name}...")
             try:
@@ -1463,8 +1499,15 @@ class MawaqitUploader:
                 # Force the panel to open with JavaScript if click didn't work
                 force_open_result = self.driver.execute_script("""
                     var el = arguments[0];
-                    var ariaExpanded = el.getAttribute('aria-expanded');
-                    var target = el.getAttribute('data-target') || el.getAttribute('href');
+                    var maxDepth = arguments[1];
+                    // Traverse up to find the actual accordion toggle with data-target or href
+                    var toggleEl = el;
+                    var target = null;
+                    for (var i = 0; i < maxDepth && toggleEl; i++) {
+                        target = toggleEl.getAttribute('data-target') || toggleEl.getAttribute('href');
+                        if (target) break;
+                        toggleEl = toggleEl.parentElement;
+                    }
                     var panel = target ? document.querySelector(target) : null;
                     
                     if (!panel) {
@@ -1477,8 +1520,10 @@ class MawaqitUploader:
                     if (!wasVisible) {
                         panel.classList.add('show', 'in');
                         panel.style.display = 'block';
-                        el.setAttribute('aria-expanded', 'true');
-                        el.classList.remove('collapsed');
+                        if (toggleEl) {
+                            toggleEl.setAttribute('aria-expanded', 'true');
+                            toggleEl.classList.remove('collapsed');
+                        }
                     }
                     
                     var panelInputs = panel.querySelectorAll('input.calendar-prayer-time').length;
@@ -1487,9 +1532,10 @@ class MawaqitUploader:
                         success: true,
                         wasVisible: wasVisible,
                         nowVisible: panel.classList.contains('show'),
-                        panelInputs: panelInputs
+                        panelInputs: panelInputs,
+                        target: target
                     };
-                """, month_el)
+                """, month_el, self._ACCORDION_ANCESTOR_DEPTH)
                 logger.info(f"Force open result: {force_open_result}")
                 
                 if force_open_result.get('success') and force_open_result.get('nowVisible'):
@@ -1529,8 +1575,10 @@ class MawaqitUploader:
                 time.sleep(2)
                 
                 # CRITICAL: Get inputs from the expanded month panel using the month_el we just clicked
-                # The month_el has a data-target or href that points to the panel
-                panel_id = month_el.get_attribute('data-target') or month_el.get_attribute('href')
+                # Resolve the accordion toggle to get its data-target or href panel reference
+                toggle_el = self._resolve_accordion_toggle(month_el)
+                panel_id = (toggle_el.get_attribute('data-target') or toggle_el.get_attribute('href')
+                            ) if toggle_el else None
                 logger.info(f"📍 Athan panel ID: {panel_id}")
                 
                 if panel_id and panel_id.startswith('#'):
@@ -1619,7 +1667,15 @@ class MawaqitUploader:
                     # Close the month accordion
                     self.driver.execute_script("""
                         var el = arguments[0];
-                        var target = el.getAttribute('data-target') || el.getAttribute('href');
+                        var maxDepth = arguments[1];
+                        // Traverse up to find the accordion toggle with data-target or href
+                        var toggleEl = el;
+                        var target = null;
+                        for (var i = 0; i < maxDepth && toggleEl; i++) {
+                            target = toggleEl.getAttribute('data-target') || toggleEl.getAttribute('href');
+                            if (target) break;
+                            toggleEl = toggleEl.parentElement;
+                        }
                         var panel = null;
                         
                         if (target) {
@@ -1634,10 +1690,12 @@ class MawaqitUploader:
                         if (panel) {
                             panel.classList.remove('show', 'in');
                             panel.style.display = 'none';
-                            el.setAttribute('aria-expanded', 'false');
-                            el.classList.add('collapsed');
+                            if (toggleEl) {
+                                toggleEl.setAttribute('aria-expanded', 'false');
+                                toggleEl.classList.add('collapsed');
+                            }
                         }
-                    """, month_el)
+                    """, month_el, self._ACCORDION_ANCESTOR_DEPTH)
                     logger.success("✅ Closed Athan month accordion")
                     time.sleep(0.5)
                     
@@ -2548,6 +2606,15 @@ class MawaqitUploader:
                     skip_month_search = True
             
             if month_el:
+                # Traverse up to find the actual accordion toggle with data-target or href
+                actual_toggle = self._resolve_accordion_toggle(month_el)
+                if actual_toggle:
+                    month_el = actual_toggle
+                    logger.debug(f"Resolved Iqama accordion toggle: tag={month_el.tag_name}, "
+                                 f"target={month_el.get_attribute('data-target') or month_el.get_attribute('href')}")
+                else:
+                    logger.warning("Could not find Iqama accordion toggle ancestor; proceeding with original element")
+
                 # Debug: Check what element we found
                 logger.info(f"Selected Iqama month element: tag={month_el.tag_name}, text='{month_el.text.strip()}'")
                 logger.info(f"  Classes: {month_el.get_attribute('class')}")
@@ -2580,7 +2647,15 @@ class MawaqitUploader:
                 # Force the Iqama panel to open with JavaScript
                 force_open_result = self.driver.execute_script("""
                     var el = arguments[0];
-                    var target = el.getAttribute('data-target') || el.getAttribute('href');
+                    var maxDepth = arguments[1];
+                    // Traverse up to find the accordion toggle with data-target or href
+                    var toggleEl = el;
+                    var target = null;
+                    for (var i = 0; i < maxDepth && toggleEl; i++) {
+                        target = toggleEl.getAttribute('data-target') || toggleEl.getAttribute('href');
+                        if (target) break;
+                        toggleEl = toggleEl.parentElement;
+                    }
                     var panel = null;
                     
                     if (target) {
@@ -2603,8 +2678,10 @@ class MawaqitUploader:
                     if (!wasVisible) {
                         panel.classList.add('show', 'in');
                         panel.style.display = 'block';
-                        el.setAttribute('aria-expanded', 'true');
-                        el.classList.remove('collapsed');
+                        if (toggleEl) {
+                            toggleEl.setAttribute('aria-expanded', 'true');
+                            toggleEl.classList.remove('collapsed');
+                        }
                     }
                     
                     var panelInputs = panel.querySelectorAll('input.calendar-prayer-time').length;
@@ -2613,9 +2690,10 @@ class MawaqitUploader:
                         success: true,
                         wasVisible: wasVisible,
                         nowVisible: panel.classList.contains('show'),
-                        panelInputs: panelInputs
+                        panelInputs: panelInputs,
+                        target: target
                     };
-                """, month_el)
+                """, month_el, self._ACCORDION_ANCESTOR_DEPTH)
                 logger.info(f"Iqama force open result: {force_open_result}")
                 
                 if force_open_result.get('success'):
